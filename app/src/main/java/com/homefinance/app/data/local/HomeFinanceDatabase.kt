@@ -64,12 +64,20 @@ abstract class HomeFinanceDatabase : RoomDatabase() {
          * Every known migration is registered up front, and there is no
          * `fallbackToDestructiveMigration` and no seeding - schema changes ship as real
          * migrations, and the database starts empty.
+         *
+         * Constructing the database does **not** open it. The SQLite file is not touched until a
+         * DAO is actually queried, which is what keeps application start-up off the disk.
+         *
+         * @param name the SQLite file to open. Production always takes the default, [NAME]. The
+         *   parameter exists so that instrumented tests can open an *isolated* file through this
+         *   exact configuration - the migrations included - rather than hand-rolling a second
+         *   builder that could quietly drift from what ships. Tests must never pass [NAME].
          */
-        fun build(context: Context): HomeFinanceDatabase =
+        fun build(context: Context, name: String = NAME): HomeFinanceDatabase =
             Room.databaseBuilder(
                 context.applicationContext,
                 HomeFinanceDatabase::class.java,
-                NAME,
+                name,
             )
                 .addMigrations(*HOME_FINANCE_MIGRATIONS)
                 .build()

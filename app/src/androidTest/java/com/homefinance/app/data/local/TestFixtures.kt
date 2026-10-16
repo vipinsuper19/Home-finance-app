@@ -57,6 +57,33 @@ internal fun transaction(
 )
 
 /**
+ * `MigrationTestHelper`'s existing tests, plus the runtime tests, need a *real* database file as
+ * well as an in-memory one.
+ *
+ * [TEST_DATABASE_NAME] is deliberately not [HomeFinanceDatabase.NAME]: a test must never open -
+ * and therefore never create, migrate or write to - the household's own ledger.
+ */
+internal const val TEST_DATABASE_NAME = "home_finance-test.db"
+
+/**
+ * Opens the isolated test file through the **production configuration**, so what is under test is
+ * the builder that ships (migrations and all) rather than a second, hand-rolled one.
+ */
+internal fun isolatedFileDatabase(): HomeFinanceDatabase =
+    HomeFinanceDatabase.build(
+        context = InstrumentationRegistry.getInstrumentation().targetContext,
+        name = TEST_DATABASE_NAME,
+    )
+
+/**
+ * Removes the isolated test file and its `-wal`/`-journal` siblings, so a run cannot depend on
+ * what an earlier run left behind, and so the test device is left as it was found.
+ */
+internal fun deleteTestDatabase() {
+    InstrumentationRegistry.getInstrumentation().targetContext.deleteDatabase(TEST_DATABASE_NAME)
+}
+
+/**
  * Asserts that [block] is refused by a database constraint.
  *
  * Any other failure - including the block unexpectedly succeeding - propagates, so this cannot
