@@ -1,13 +1,22 @@
 package com.homefinance.app
 
 import android.app.Application
+import com.homefinance.app.data.local.HomeFinanceDatabase
 
 /**
  * Application entry point for Home Finance.
  *
- * Deliberately minimal for Task 1.1: there is no dependency-injection graph and no database
- * yet. When Room is introduced, this is where the app-wide container is created and
- * initialised. Home Finance is strictly offline-first, so no network client will ever be
- * wired up here.
+ * The single Room database is created lazily and shared for the whole process: `by lazy` is
+ * thread-safe, and nothing touches the file until a DAO is actually queried. There is
+ * deliberately no dependency-injection framework and no network client - Home Finance is
+ * strictly offline-first.
  */
-class HomeFinanceApp : Application()
+class HomeFinanceApp : Application() {
+
+    /**
+     * The one and only database instance, shared for the lifetime of the process. Feature code
+     * obtains it from the application context; nothing else should call
+     * [HomeFinanceDatabase.build].
+     */
+    val database: HomeFinanceDatabase by lazy { HomeFinanceDatabase.build(this) }
+}

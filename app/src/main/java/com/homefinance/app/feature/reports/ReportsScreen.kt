@@ -21,7 +21,8 @@ fun ReportsScreen(modifier: Modifier = Modifier) {
         HomeFinanceTopBar(title = stringResource(R.string.title_reports))
         PlaceholderContent(
             icon = Icons.Outlined.DateRange,
-            title = stringResource(R.string.title_reports),
+            // The screen title is already in the top bar; the body leads with the state.
+            title = stringResource(R.string.placeholder_coming_soon),
             message = stringResource(R.string.reports_placeholder),
             modifier = Modifier.weight(1f),
         )

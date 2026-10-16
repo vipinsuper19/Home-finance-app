@@ -21,7 +21,8 @@ fun RecurringScreen(modifier: Modifier = Modifier) {
         HomeFinanceTopBar(title = stringResource(R.string.title_recurring))
         PlaceholderContent(
             icon = Icons.Outlined.Refresh,
-            title = stringResource(R.string.title_recurring),
+            // The screen title is already in the top bar; the body leads with the state.
+            title = stringResource(R.string.placeholder_coming_soon),
             message = stringResource(R.string.recurring_placeholder),
             modifier = Modifier.weight(1f),
         )

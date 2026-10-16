@@ -47,14 +47,17 @@ fun HomeFinanceBottomBar(
 }
 
 /**
- * True when [destination] is the tab currently shown, including while a nested destination
- * is on top of it. The `when` is exhaustive, so adding a tab cannot silently lose its
- * highlight state.
+ * True when [destination] is the tab currently shown, including while a detail destination
+ * opened from that tab is on top of it. The `when` is exhaustive, so adding a tab cannot
+ * silently lose its highlight state.
  */
 private fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
     this?.hierarchy?.any { navDestination ->
         when (destination) {
-            TopLevelDestination.Home -> navDestination.hasRoute<HomeRoute>()
+            TopLevelDestination.Home ->
+                // Settings is opened from the Home toolbar, so Home stays highlighted while it
+                // is on screen and the bar is never shown with no section selected.
+                navDestination.hasRoute<HomeRoute>() || navDestination.hasRoute<SettingsRoute>()
             TopLevelDestination.Transactions -> navDestination.hasRoute<TransactionsRoute>()
             TopLevelDestination.Recurring -> navDestination.hasRoute<RecurringRoute>()
             TopLevelDestination.Reports -> navDestination.hasRoute<ReportsRoute>()

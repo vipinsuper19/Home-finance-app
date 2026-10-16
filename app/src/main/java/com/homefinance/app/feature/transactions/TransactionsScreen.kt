@@ -21,7 +21,8 @@ fun TransactionsScreen(modifier: Modifier = Modifier) {
         HomeFinanceTopBar(title = stringResource(R.string.title_transactions))
         PlaceholderContent(
             icon = Icons.AutoMirrored.Outlined.List,
-            title = stringResource(R.string.title_transactions),
+            // The screen title is already in the top bar; the body leads with the state.
+            title = stringResource(R.string.placeholder_coming_soon),
             message = stringResource(R.string.transactions_placeholder),
             modifier = Modifier.weight(1f),
         )

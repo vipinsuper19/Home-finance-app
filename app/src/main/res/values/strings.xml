@@ -20,8 +20,9 @@
     <string name="home_next_steps_body">Saved transactions, recurring payments including milk deliveries, and monthly reports.</string>
 
     <!-- Destinations that are navigable but not implemented yet -->
-    <string name="transactions_placeholder">Recording and browsing income and expenses will be added in a later task.</string>
-    <string name="recurring_placeholder">Recurring bills, subscriptions and milk deliveries will be added in a later task.</string>
-    <string name="reports_placeholder">Monthly summaries and category breakdowns will be added in a later task.</string>
-    <string name="settings_placeholder">Currency, categories, reminders and other preferences will be added in a later task.</string>
+    <string name="placeholder_coming_soon">Coming soon</string>
+    <string name="transactions_placeholder">Saving and browsing income and expenses is coming soon.</string>
+    <string name="recurring_placeholder">Recurring bills, subscriptions and milk deliveries are coming soon.</string>
+    <string name="reports_placeholder">Monthly summaries and category breakdowns are coming soon.</string>
+    <string name="settings_placeholder">Currency, categories, reminders and other preferences are coming soon.</string>
 </resources>

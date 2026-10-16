@@ -115,8 +115,9 @@ private fun BalanceCard(
         ),
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            // 16 dp interior padding matches SummaryAmountCard and the screen gutters.
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -143,9 +144,11 @@ private fun BalanceCard(
 private fun SampleDataBadge(modifier: Modifier = Modifier) {
     Surface(
         modifier = modifier,
+        // A white pill with dark text: the previous translucent-white badge faded the text to
+        // roughly 4.4:1 contrast against the emerald card, below the 4.5:1 WCAG AA floor.
         shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.18f),
-        contentColor = MaterialTheme.colorScheme.onPrimary,
+        color = MaterialTheme.colorScheme.surface,
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
         Text(
             text = stringResource(R.string.home_sample_badge),
@@ -166,8 +169,8 @@ private fun NextStepsCard(modifier: Modifier = Modifier) {
         ),
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
                 text = stringResource(R.string.home_next_steps_title),

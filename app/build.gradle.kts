@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -49,6 +50,17 @@ kotlin {
     }
 }
 
+/**
+ * Room exports the JSON schema of every database version into this directory.
+ *
+ * Recording version 1 before the first table exists is what makes real, testable migrations
+ * possible later: this app must never wipe a household's ledger just to change the schema, so
+ * the schema history has to start at the beginning.
+ */
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
+
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -65,6 +77,12 @@ dependencies {
 
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
+
+    // Local persistence. Room's runtime plus the KSP compiler that generates the database and
+    // DAO implementations at build time. Strictly offline: no network client is involved.
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
