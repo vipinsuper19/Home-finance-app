@@ -4,15 +4,21 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
+import com.homefinance.app.data.local.converter.HomeFinanceTypeConverters
+import com.homefinance.app.data.local.dao.CategoryDao
+import com.homefinance.app.data.local.dao.TransactionDao
 import com.homefinance.app.data.local.entity.AppSettingEntity
+import com.homefinance.app.data.local.entity.CategoryEntity
+import com.homefinance.app.data.local.entity.TransactionEntity
+import com.homefinance.app.data.local.migration.HOME_FINANCE_MIGRATIONS
 
 /**
  * The single Room database for Home Finance.
  *
- * Task 2.1 holds no financial tables yet. Room will not compile a database that declares no
- * entities, so [AppSettingEntity] - a non-financial key/value preference row - is present to
- * give the schema a real version 1. Later tasks add the financial tables, DAOs and tested
- * migrations on top of this foundation.
+ * Version 1 held only [AppSettingEntity]. Version 2 adds the financial tables, [CategoryEntity]
+ * and [TransactionEntity], along with their indices and the foreign key between them - see
+ * [HOME_FINANCE_MIGRATIONS] for the upgrade itself.
  *
  * Conventions for the persistence layer:
  * - entities live in `com.homefinance.app.data.local.entity`
@@ -21,14 +27,27 @@ import com.homefinance.app.data.local.entity.AppSettingEntity
  *
  * Schema export stays on (see the `room.schemaLocation` KSP argument in the app module): a
  * household ledger must never be wiped to change the schema, so migrations have to be written
- * and tested against a recorded schema history.
+ * and tested against a recorded schema history. The exported files under `app/schemas` are part
+ * of the source and must not be deleted or edited by hand.
+ *
+ * [HomeFinanceTypeConverters] is registered here rather than per entity so that the enum, date and
+ * timestamp conversions are declared exactly once for the whole database.
  */
 @Database(
-    entities = [AppSettingEntity::class],
-    version = 1,
+    entities = [
+        AppSettingEntity::class,
+        CategoryEntity::class,
+        TransactionEntity::class,
+    ],
+    version = 2,
     exportSchema = true,
 )
+@TypeConverters(HomeFinanceTypeConverters::class)
 abstract class HomeFinanceDatabase : RoomDatabase() {
+
+    abstract fun categoryDao(): CategoryDao
+
+    abstract fun transactionDao(): TransactionDao
 
     companion object {
 
@@ -42,7 +61,8 @@ abstract class HomeFinanceDatabase : RoomDatabase() {
          * Builds the database. Deliberately not named `getInstance`: the application class owns
          * the only instance, so nothing else can accidentally open a second connection.
          *
-         * No `fallbackToDestructiveMigration` and no seeding - schema changes ship as real
+         * Every known migration is registered up front, and there is no
+         * `fallbackToDestructiveMigration` and no seeding - schema changes ship as real
          * migrations, and the database starts empty.
          */
         fun build(context: Context): HomeFinanceDatabase =
@@ -50,6 +70,8 @@ abstract class HomeFinanceDatabase : RoomDatabase() {
                 context.applicationContext,
                 HomeFinanceDatabase::class.java,
                 NAME,
-            ).build()
+            )
+                .addMigrations(*HOME_FINANCE_MIGRATIONS)
+                .build()
     }
 }

@@ -4,7 +4,8 @@ A simple, offline-first Android application for managing household income, expen
 
 Home Finance is being built to make everyday financial tracking easier, including daily household expenses such as milk, monthly bills such as rent, and income received from tenants or other sources.
 
-> **Development status:** MVP in progress. The application shell and initial local database foundation are being developed. Full financial transaction management and reporting are planned.
+> **Development status:** MVP in progress. The application shell and the local financial data layer
+> are in place and verified. Financial screens, reporting, and export are planned.
 
 ## Features
 
@@ -17,7 +18,10 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Offline-first application architecture.
 - Room database foundation with schema export.
 - Application-scoped, lazy database initialization.
-- Unit tests for currency formatting, navigation destinations, placeholder content, and home screen state.
+- Income/expense transaction and category tables, with a tested version 1 to version 2 migration.
+- DAOs for categories and transactions, plus a repository layer that validates amounts, category references, and category types.
+- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, and repository validation.
+- Instrumented tests against an in-memory Room database for DAO behaviour and migration safety.
 - No backend or account registration required for the current architecture.
 
 ### Planned
@@ -222,7 +226,7 @@ Database migrations and backup/restore behavior will be implemented and tested a
 |---|---|---|
 | Task 1 | Project setup, app shell, navigation, and UI foundation | Completed |
 | Task 2.1 | Room configuration and initial schema | Completed |
-| Task 2.2 | Core financial entities, DAOs, and validation | In progress |
+| Task 2.2 | Core financial entities, DAOs, and validation | Completed |
 | Task 3 | Transaction management UI | Planned |
 | Task 4 | Recurring expense engine | Planned |
 | Task 5 | Milk tracking and rental income management | Planned |

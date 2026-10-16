@@ -1,15 +1,29 @@
-*.iml
-.gradle
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
+# Gradle build output and caches
+.gradle/
 /build
 /captures
+
+# Android Studio / IntelliJ IDEA
+# Ignored as a whole: this directory holds machine-specific IDE state (JDK name, selected
+# device, window layout). It must never be pushed - anyone cloning the project generates it.
+*.iml
+.idea/
+
+# Kotlin build/session state (Kotlin 2.x)
+.kotlin/
+
+# Android SDK location - machine-specific
+local.properties
+
+# Native build output
 .externalNativeBuild
 .cxx
-local.properties
+
+# Signing material and secrets - never commit these
+*.jks
+*.keystore
+keystore.properties
+
+# OS noise
+.DS_Store
+Thumbs.db

@@ -42,6 +42,13 @@ android {
     buildFeatures {
         compose = true
     }
+
+    sourceSets {
+        // Room's MigrationTestHelper reads the exported schema JSON straight out of the test
+        // APK's assets, under the database's fully-qualified name. Without this the migration
+        // test compiles but cannot find version 1 or version 2 to validate against.
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
 }
 
 kotlin {
@@ -89,6 +96,9 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    // MigrationTestHelper: reads the exported schemas from the test APK's assets and proves that
+    // the version 1 -> 2 migration lands on exactly the schema KSP generated.
+    androidTestImplementation(libs.androidx.room.testing)
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
