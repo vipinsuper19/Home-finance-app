@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.homefinance.app.data.local.entity.TransactionEntity
+import com.homefinance.app.data.local.relation.TransactionWithCategory
 import com.homefinance.app.data.model.TransactionType
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
@@ -42,6 +43,34 @@ interface TransactionDao {
     /** Observes the whole ledger, newest first. */
     @Query("SELECT * FROM transactions ORDER BY transaction_date DESC, id DESC")
     fun observeAll(): Flow<List<TransactionEntity>>
+
+    /**
+     * Observes the whole ledger, newest first, each row carrying the name of the category it is
+     * filed under.
+     *
+     * One statement, so rendering the list costs one query no matter how many rows there are.
+     * The join is an `INNER JOIN` on purpose: `category_id` is a non-null foreign key to a table
+     * whose rows are retired rather than deleted, so there is no such thing as a transaction
+     * without a category, and an outer join would only invent a `null` case that cannot happen.
+     *
+     * Ordering matches [observeAll] exactly - `transaction_date DESC, id DESC` - including the
+     * `id` tie-break that keeps same-day entries in a stable order.
+     */
+    @Query(
+        """
+        SELECT t.id                 AS id,
+               t.type               AS type,
+               t.amount_paise       AS amount_paise,
+               t.category_id        AS category_id,
+               t.description        AS description,
+               t.transaction_date   AS transaction_date,
+               c.name               AS category_name
+        FROM transactions AS t
+        INNER JOIN categories AS c ON c.id = t.category_id
+        ORDER BY t.transaction_date DESC, t.id DESC
+        """,
+    )
+    fun observeAllWithCategory(): Flow<List<TransactionWithCategory>>
 
     /**
      * Observes the transactions dated between [from] and [to] **inclusive**, newest first.

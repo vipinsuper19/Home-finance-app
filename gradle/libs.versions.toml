@@ -16,6 +16,10 @@ materialIconsCore = "1.7.8"
 navigation = "2.10.1"
 serializationJson = "1.11.0"
 room = "2.8.5"
+# Not a new version entering the build: 1.9.0 is what `kotlinx-coroutines-core` already resolves to
+# transitively (via androidx.lifecycle 2.11.0 and Room 2.8.5). It is declared explicitly so the
+# test artifact can never drift away from the runtime one it has to match.
+coroutines = "1.9.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -40,6 +44,10 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 # Test-only helper (MigrationTestHelper). Same version as the runtime, never shipped.
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
+
+# Test-only. Lets a JVM test replace `Dispatchers.Main`, which `viewModelScope` needs and which
+# does not exist off-device. Never shipped.
+kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }

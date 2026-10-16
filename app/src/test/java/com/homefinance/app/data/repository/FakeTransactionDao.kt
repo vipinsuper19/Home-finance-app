@@ -2,9 +2,11 @@ package com.homefinance.app.data.repository
 
 import com.homefinance.app.data.local.dao.TransactionDao
 import com.homefinance.app.data.local.entity.TransactionEntity
+import com.homefinance.app.data.local.relation.TransactionWithCategory
 import com.homefinance.app.data.model.TransactionType
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 
 /**
@@ -14,17 +16,39 @@ import kotlinx.coroutines.flow.flowOf
  * repository tests care about which rows came back, not about SQLite's execution plan. Ordering
  * itself is asserted against a real in-memory Room database in
  * `com.homefinance.app.data.local.TransactionDaoTest`.
+ *
+ * @param categoryNames the names [observeAllWithCategory] resolves `category_id` against, standing
+ *   in for the `categories` table. A row whose category is absent is **dropped**, which is what
+ *   the real `INNER JOIN` does; a fake that invented a name instead would hide a broken join. It
+ *   deliberately does not model the category *table* - nothing here should let a test believe it
+ *   has exercised the real join, which is asserted against Room in `TransactionDaoTest`.
+ * @param initial rows to start with, so a test can seed the ledger without calling [insert] and
+ *   then having to explain why.
  */
-class FakeTransactionDao : TransactionDao {
+class FakeTransactionDao(
+    private val categoryNames: Map<Long, String> = emptyMap(),
+    initial: List<TransactionEntity> = emptyList(),
+) : TransactionDao {
 
-    private val rows: MutableMap<Long, TransactionEntity> = LinkedHashMap()
-    private var nextId: Long = 1L
+    private val rows: MutableMap<Long, TransactionEntity> =
+        initial.associateByTo(LinkedHashMap()) { it.id }
+
+    private var nextId: Long = (initial.maxOfOrNull { it.id } ?: 0L) + 1L
 
     /** Every entity passed to [insert], in call order, exactly as it arrived. */
     val inserted: MutableList<TransactionEntity> = mutableListOf()
 
     /** Every entity passed to [update], in call order, exactly as it arrived. */
     val updated: MutableList<TransactionEntity> = mutableListOf()
+
+    /**
+     * When set, [observeAllWithCategory] fails with it instead of emitting.
+     *
+     * Mutable so a test can make an attempt fail, then let a retry succeed - a failure that could
+     * not be recovered from would only ever exercise half of the retry path. Assignment and read
+     * are single-threaded within a test, so this does not need synchronising.
+     */
+    var failure: Throwable? = null
 
     override suspend fun insert(transaction: TransactionEntity): Long {
         val id = if (transaction.id != 0L) transaction.id else nextId++
@@ -42,6 +66,29 @@ class FakeTransactionDao : TransactionDao {
 
     override fun observeAll(): Flow<List<TransactionEntity>> =
         flowOf(rows.values.sortedWith(NEWEST_FIRST))
+
+    override fun observeAllWithCategory(): Flow<List<TransactionWithCategory>> {
+        val failure = failure
+        if (failure != null) return flow { throw failure }
+
+        return flowOf(
+            rows.values
+                .sortedWith(NEWEST_FIRST)
+                .mapNotNull { row ->
+                    categoryNames[row.categoryId]?.let { name ->
+                        TransactionWithCategory(
+                            id = row.id,
+                            type = row.type,
+                            amountPaise = row.amountPaise,
+                            categoryId = row.categoryId,
+                            description = row.description,
+                            transactionDate = row.transactionDate,
+                            categoryName = name,
+                        )
+                    }
+                },
+        )
+    }
 
     override fun observeInDateRange(from: LocalDate, to: LocalDate): Flow<List<TransactionEntity>> =
         flowOf(rows.values.filter { it.transactionDate in from..to }.sortedWith(NEWEST_FIRST))

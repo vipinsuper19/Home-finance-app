@@ -3,6 +3,7 @@ package com.homefinance.app.data.repository
 import com.homefinance.app.data.local.dao.CategoryDao
 import com.homefinance.app.data.local.dao.TransactionDao
 import com.homefinance.app.data.local.entity.TransactionEntity
+import com.homefinance.app.data.local.relation.TransactionWithCategory
 import com.homefinance.app.data.model.TransactionType
 import java.time.Instant
 import java.time.LocalDate
@@ -56,6 +57,16 @@ class TransactionRepository(
 
     /** The whole ledger, newest first. */
     fun observeAll(): Flow<List<TransactionEntity>> = transactionDao.observeAll()
+
+    /**
+     * The whole ledger, newest first, each row carrying the name of its category.
+     *
+     * This is what the transaction list reads. It is a pass-through with no rules of its own:
+     * reading has no invariants to defend, and the join is expressed once in the DAO so the
+     * screen never has to resolve a category per row.
+     */
+    fun observeAllWithCategory(): Flow<List<TransactionWithCategory>> =
+        transactionDao.observeAllWithCategory()
 
     /** Transactions dated between [from] and [to] inclusive, newest first. */
     fun observeInDateRange(from: LocalDate, to: LocalDate): Flow<List<TransactionEntity>> =

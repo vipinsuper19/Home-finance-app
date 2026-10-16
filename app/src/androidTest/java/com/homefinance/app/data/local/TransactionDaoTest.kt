@@ -18,9 +18,10 @@ import org.junit.runner.RunWith
 /**
  * [TransactionDao] against a real in-memory Room database.
  *
- * The two things worth proving here cannot be faked: that an amount really is stored as an exact
- * integer, and that a transaction pointing at a category that does not exist is refused by the
- * foreign key rather than being silently accepted.
+ * The things worth proving here cannot be faked: that an amount really is stored as an exact
+ * integer, that a transaction pointing at a category that does not exist is refused by the
+ * foreign key rather than being silently accepted, and that the `transactions`/`categories` join
+ * the transaction list reads really does hand back each row's own category name.
  */
 @RunWith(AndroidJUnit4::class)
 class TransactionDaoTest {
@@ -119,6 +120,76 @@ class TransactionDaoTest {
             val ids = transactionDao.observeAll().first().map { it.id }
 
             assertEquals(listOf(third, second, first), ids)
+        }
+    }
+
+    /**
+     * The transaction list needs the category's *name*, which lives in another table. Joining it
+     * in SQL is what keeps rendering the list to one query; this pins the behaviour a fake cannot
+     * reproduce - the right name for each row, the converted enum and date, and the same
+     * newest-first order [observeAll] uses.
+     */
+    @Test
+    fun observeAllWithCategoryCarriesEachRowsOwnCategoryNameNewestFirst() {
+        runBlocking {
+            val groceriesOlder = transactionDao.insert(
+                transaction(expenseCategoryId, amountPaise = 111L, transactionDate = TEST_DATE.minusDays(1)),
+            )
+            val salaryNewer = transactionDao.insert(
+                transaction(incomeCategoryId, TransactionType.INCOME, amountPaise = 222L, transactionDate = TEST_DATE),
+            )
+
+            val rows = transactionDao.observeAllWithCategory().first()
+
+            assertEquals(listOf(salaryNewer, groceriesOlder), rows.map { it.id })
+            assertEquals(listOf("Salary", "Groceries"), rows.map { it.categoryName })
+            assertEquals(listOf(TransactionType.INCOME, TransactionType.EXPENSE), rows.map { it.type })
+            assertEquals(listOf(222L, 111L), rows.map { it.amountPaise })
+            assertEquals(listOf(TEST_DATE, TEST_DATE.minusDays(1)), rows.map { it.transactionDate })
+        }
+    }
+
+    @Test
+    fun observeAllWithCategoryCarriesTheDescriptionAndCategoryIdThrough() {
+        runBlocking {
+            val id = transactionDao.insert(transaction(expenseCategoryId))
+            transactionDao.update(transactionDao.getById(id)!!.copy(description = "August milk"))
+
+            val row = transactionDao.observeAllWithCategory().first().single()
+
+            assertEquals("August milk", row.description)
+            assertEquals(expenseCategoryId, row.categoryId)
+        }
+    }
+
+    @Test
+    fun observeAllWithCategoryLeavesTheDescriptionNullWhenThereIsNone() {
+        runBlocking {
+            transactionDao.insert(transaction(expenseCategoryId))
+
+            assertNull(transactionDao.observeAllWithCategory().first().single().description)
+        }
+    }
+
+    /**
+     * Retiring a category must not erase it from history: the ledger still has to say what the
+     * money was spent on, which is exactly why categories are deactivated rather than deleted.
+     */
+    @Test
+    fun observeAllWithCategoryStillNamesARetiredCategory() {
+        runBlocking {
+            transactionDao.insert(transaction(expenseCategoryId, amountPaise = 111L))
+            categoryDao.deactivate(expenseCategoryId)
+
+            assertEquals("Groceries", transactionDao.observeAllWithCategory().first().single().categoryName)
+        }
+    }
+
+    /** The empty state depends on this: an empty ledger is an empty list, not a failure. */
+    @Test
+    fun observeAllWithCategoryIsEmptyWhenNothingHasBeenRecorded() {
+        runBlocking {
+            assertEquals(0, transactionDao.observeAllWithCategory().first().size)
         }
     }
 

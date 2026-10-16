@@ -19,9 +19,15 @@
     <string name="home_next_steps_title">Coming next</string>
     <string name="home_next_steps_body">Saved transactions, recurring payments including milk deliveries, and monthly reports.</string>
 
+    <!-- Transactions screen -->
+    <string name="transactions_empty_title">No transactions yet</string>
+    <string name="transactions_empty_message">Income and expenses you record will appear here, newest first.</string>
+    <string name="transactions_error_title">Could not load transactions</string>
+    <string name="transactions_error_message">Something went wrong while reading your saved transactions. Nothing has been changed.</string>
+    <string name="transactions_error_retry">Try again</string>
+
     <!-- Destinations that are navigable but not implemented yet -->
     <string name="placeholder_coming_soon">Coming soon</string>
-    <string name="transactions_placeholder">Saving and browsing income and expenses is coming soon.</string>
     <string name="recurring_placeholder">Recurring bills, subscriptions and milk deliveries are coming soon.</string>
     <string name="reports_placeholder">Monthly summaries and category breakdowns are coming soon.</string>
     <string name="settings_placeholder">Currency, categories, reminders and other preferences are coming soon.</string>

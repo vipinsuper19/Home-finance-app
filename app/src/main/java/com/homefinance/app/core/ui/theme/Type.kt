@@ -17,8 +17,8 @@ private const val TabularFigures = "tnum"
 val AppTypography = Typography(
     displaySmall = Baseline.displaySmall.copy(fontWeight = FontWeight.SemiBold),
     headlineLarge = Baseline.headlineLarge.copy(fontWeight = FontWeight.SemiBold),
-    // The two styles that render money opt into tabular figures, so digits have a fixed
-    // width and amounts line up card-to-card instead of shifting as the values change.
+    // The styles that render money opt into tabular figures, so digits have a fixed width and
+    // amounts line up card-to-card and row-to-row instead of shifting as the values change.
     headlineMedium = Baseline.headlineMedium.copy(
         fontWeight = FontWeight.SemiBold,
         fontFeatureSettings = TabularFigures,
@@ -28,6 +28,9 @@ val AppTypography = Typography(
         fontWeight = FontWeight.SemiBold,
         fontFeatureSettings = TabularFigures,
     ),
-    titleMedium = Baseline.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+    titleMedium = Baseline.titleMedium.copy(
+        fontWeight = FontWeight.SemiBold,
+        fontFeatureSettings = TabularFigures,
+    ),
     labelLarge = Baseline.labelLarge.copy(fontWeight = FontWeight.Medium),
 )
