@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -51,7 +52,7 @@ class TransactionsScreenTest {
     fun theInitialLoadShowsAProgressIndicator() {
         composeTestRule.setContent {
             HomeFinanceTheme {
-                TransactionsContent(uiState = TransactionsUiState.Loading, onRetry = {})
+                TransactionsContent(uiState = TransactionsUiState.Loading, onRetry = {}, onAddTransaction = {})
             }
         }
 
@@ -63,7 +64,7 @@ class TransactionsScreenTest {
     fun theEmptyLedgerShowsTheEmptyStateRatherThanAnError() {
         composeTestRule.setContent {
             HomeFinanceTheme {
-                TransactionsContent(uiState = TransactionsUiState.Content(emptyList()), onRetry = {})
+                TransactionsContent(uiState = TransactionsUiState.Content(emptyList()), onRetry = {}, onAddTransaction = {})
             }
         }
 
@@ -82,6 +83,7 @@ class TransactionsScreenTest {
                 TransactionsContent(
                     uiState = TransactionsUiState.Error(IOException("the database could not be read")),
                     onRetry = { retries.incrementAndGet() },
+                    onAddTransaction = {},
                 )
             }
         }
@@ -95,12 +97,35 @@ class TransactionsScreenTest {
     }
 
     @Test
+    fun theEmptyLedgerOffersTheAddActionAndItOpensTheForm() {
+        val adds = AtomicInteger()
+
+        composeTestRule.setContent {
+            HomeFinanceTheme {
+                TransactionsContent(
+                    uiState = TransactionsUiState.Content(emptyList()),
+                    onRetry = {},
+                    onAddTransaction = { adds.incrementAndGet() },
+                )
+            }
+        }
+
+        // A fresh install has an empty ledger, so the add action must be offered here - not only
+        // once there is already something to look at.
+        composeTestRule.onNodeWithContentDescription(text(R.string.transactions_add))
+            .assertIsDisplayed()
+            .performClick()
+
+        assertEquals(1, adds.get())
+    }
+
+    @Test
     fun aFailureDoesNotRenderRowsUnderneathIt() {
         val failure = TransactionsUiState.Error(IOException("the database could not be read"))
 
         composeTestRule.setContent {
             HomeFinanceTheme {
-                TransactionsContent(uiState = failure, onRetry = {})
+                TransactionsContent(uiState = failure, onRetry = {}, onAddTransaction = {})
             }
         }
 
@@ -138,6 +163,7 @@ class TransactionsScreenTest {
                         ),
                     ),
                     onRetry = {},
+                    onAddTransaction = {},
                 )
             }
         }
@@ -174,6 +200,7 @@ class TransactionsScreenTest {
                         ),
                     ),
                     onRetry = {},
+                    onAddTransaction = {},
                 )
             }
         }
@@ -200,6 +227,7 @@ class TransactionsScreenTest {
                         ),
                     ),
                     onRetry = {},
+                    onAddTransaction = {},
                 )
             }
         }
@@ -242,7 +270,10 @@ class TransactionsScreenTest {
 
             composeTestRule.setContent {
                 HomeFinanceTheme {
-                    TransactionsScreen(viewModel = TransactionsViewModel(transactions))
+                    TransactionsScreen(
+                        onAddTransaction = {},
+                        viewModel = TransactionsViewModel(transactions),
+                    )
                 }
             }
 

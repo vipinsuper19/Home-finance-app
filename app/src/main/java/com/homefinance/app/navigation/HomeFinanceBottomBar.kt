@@ -58,7 +58,11 @@ private fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
                 // Settings is opened from the Home toolbar, so Home stays highlighted while it
                 // is on screen and the bar is never shown with no section selected.
                 navDestination.hasRoute<HomeRoute>() || navDestination.hasRoute<SettingsRoute>()
-            TopLevelDestination.Transactions -> navDestination.hasRoute<TransactionsRoute>()
+            TopLevelDestination.Transactions ->
+                // The add form is opened from this tab, so the tab stays highlighted while it is
+                // on screen and the bar is never shown with no section selected.
+                navDestination.hasRoute<TransactionsRoute>() ||
+                    navDestination.hasRoute<AddTransactionRoute>()
             TopLevelDestination.Recurring -> navDestination.hasRoute<RecurringRoute>()
             TopLevelDestination.Reports -> navDestination.hasRoute<ReportsRoute>()
         }

@@ -25,3 +25,7 @@ data object ReportsRoute
 // Detail destination opened from the Home toolbar.
 @Serializable
 data object SettingsRoute
+
+// Detail destination opened from the Transactions screen's add action.
+@Serializable
+data object AddTransactionRoute

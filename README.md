@@ -4,8 +4,9 @@ A simple, offline-first Android application for managing household income, expen
 
 Home Finance is being built to make everyday financial tracking easier, including daily household expenses such as milk, monthly bills such as rent, and income received from tenants or other sources.
 
-> **Development status:** MVP in progress. The application shell and the local financial data layer
-> are in place and verified. Financial screens, reporting, and export are planned.
+> **Development status:** MVP in progress. The application shell, the local financial data layer,
+> and the transaction list and add form are in place and verified. Editing, reporting, and export
+> are planned.
 
 ## Features
 
@@ -20,14 +21,17 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Application-scoped, lazy database initialization.
 - Income/expense transaction and category tables, with a tested version 1 to version 2 migration.
 - DAOs for categories and transactions, plus a repository layer that validates amounts, category references, and category types.
-- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, and repository validation.
-- Instrumented tests against an in-memory Room database for DAO behaviour and migration safety.
+- A transaction list showing each entry's category, description, date, and signed amount.
+- Add income and add expense forms with exact paise parsing, validation, category selection, a date picker, and an optional description.
+- Creating a category from the add form when no category exists yet.
+- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, repository validation, money input parsing, date conversion, and the add-transaction form state.
+- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety, and the transaction and add-transaction screens.
 - No backend or account registration required for the current architecture.
 
 ### Planned
 
-- Record income and expenses.
-- Categorize financial transactions.
+- Edit and delete existing transactions.
+- Manage categories: rename, retire, and restore them.
 - Track daily milk purchases using quantity and rate.
 - Manage recurring household expenses.
 - Track monthly rental income.
@@ -227,7 +231,9 @@ Database migrations and backup/restore behavior will be implemented and tested a
 | Task 1 | Project setup, app shell, navigation, and UI foundation | Completed |
 | Task 2.1 | Room configuration and initial schema | Completed |
 | Task 2.2 | Core financial entities, DAOs, and validation | Completed |
-| Task 3 | Transaction management UI | Planned |
+| Task 3.1 | Transaction list and UI state | Completed |
+| Task 3.2 | Add income and expense forms | Completed |
+| Task 3.3 | Edit and delete transactions | Planned |
 | Task 4 | Recurring expense engine | Planned |
 | Task 5 | Milk tracking and rental income management | Planned |
 | Task 6 | Reminders and local notifications | Planned |

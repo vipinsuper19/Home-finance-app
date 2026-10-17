@@ -3,6 +3,8 @@
 
     <string name="action_back">Back</string>
     <string name="action_open_settings">Open settings</string>
+    <string name="action_ok">OK</string>
+    <string name="action_cancel">Cancel</string>
 
     <!-- Destinations (used for both bottom navigation labels and screen titles) -->
     <string name="title_home">Home</string>
@@ -25,6 +27,42 @@
     <string name="transactions_error_title">Could not load transactions</string>
     <string name="transactions_error_message">Something went wrong while reading your saved transactions. Nothing has been changed.</string>
     <string name="transactions_error_retry">Try again</string>
+    <string name="transactions_add">Add transaction</string>
+
+    <!-- Add income / add expense form -->
+    <string name="add_transaction_title_income">Add income</string>
+    <string name="add_transaction_title_expense">Add expense</string>
+    <string name="add_transaction_type_label">Type</string>
+    <string name="add_transaction_type_income">Income</string>
+    <string name="add_transaction_type_expense">Expense</string>
+    <string name="add_transaction_amount_label">Amount</string>
+    <string name="add_transaction_amount_currency_symbol">₹</string>
+    <string name="add_transaction_amount_error_blank">Enter an amount</string>
+    <string name="add_transaction_amount_error_not_a_number">Enter a valid amount, for example 250 or 250.50</string>
+    <string name="add_transaction_amount_error_too_precise">Use at most two decimal places</string>
+    <string name="add_transaction_amount_error_not_positive">Amount must be more than zero</string>
+    <string name="add_transaction_amount_error_too_large">That amount is too large</string>
+    <string name="add_transaction_category_label">Category</string>
+    <string name="add_transaction_category_loading">Loading categories...</string>
+    <string name="add_transaction_category_failed">Could not load categories</string>
+    <string name="add_transaction_category_retry">Try again</string>
+    <string name="add_transaction_category_empty">No categories for this type yet</string>
+    <string name="add_transaction_category_required">Choose a category</string>
+    <string name="add_transaction_date_label">Date</string>
+    <string name="add_transaction_description_label">Description (optional)</string>
+    <string name="add_transaction_save">Save</string>
+    <string name="add_transaction_saving">Saving...</string>
+    <string name="add_transaction_save_error_category">That category is no longer available. Choose another.</string>
+    <string name="add_transaction_save_error_generic">Could not save. Nothing was changed.</string>
+
+    <!-- New category dialog, offered only when there is nothing to file the entry under -->
+    <string name="add_category_action">Add category</string>
+    <string name="add_category_dialog_title">New category</string>
+    <string name="add_category_name_label">Name</string>
+    <string name="add_category_create">Create</string>
+    <string name="add_category_error_blank">Enter a category name</string>
+    <string name="add_category_error_duplicate">That category already exists</string>
+    <string name="add_category_error_failed">Could not create the category</string>
 
     <!-- Destinations that are navigable but not implemented yet -->
     <string name="placeholder_coming_soon">Coming soon</string>

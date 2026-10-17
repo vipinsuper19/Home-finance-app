@@ -18,12 +18,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -68,6 +70,7 @@ import java.time.LocalDate
  */
 @Composable
 fun TransactionsScreen(
+    onAddTransaction: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: TransactionsViewModel = viewModel(factory = TransactionsViewModel.Factory),
 ) {
@@ -76,6 +79,7 @@ fun TransactionsScreen(
     TransactionsContent(
         uiState = uiState,
         onRetry = viewModel::retry,
+        onAddTransaction = onAddTransaction,
         modifier = modifier,
     )
 }
@@ -90,6 +94,7 @@ fun TransactionsScreen(
 internal fun TransactionsContent(
     uiState: TransactionsUiState,
     onRetry: () -> Unit,
+    onAddTransaction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -136,6 +141,21 @@ internal fun TransactionsContent(
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
+            }
+
+            // Offered in every state, including the empty one: recording the household's first
+            // transaction is exactly what an empty ledger should invite. The shell's Scaffold
+            // already insets the content for the bottom bar, so this clears it without extra work.
+            FloatingActionButton(
+                onClick = onAddTransaction,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Add,
+                    contentDescription = stringResource(R.string.transactions_add),
+                )
             }
         }
     }
@@ -315,6 +335,7 @@ private fun TransactionsContentPreview() {
                 ),
             ),
             onRetry = {},
+            onAddTransaction = {},
         )
     }
 }
