@@ -41,14 +41,26 @@ class FakeTransactionDao(
     /** Every entity passed to [update], in call order, exactly as it arrived. */
     val updated: MutableList<TransactionEntity> = mutableListOf()
 
+    /** Every id passed to [deleteById], in call order. */
+    val deletedIds: MutableList<Long> = mutableListOf()
+
     /**
-     * When set, [observeAllWithCategory] fails with it instead of emitting.
+     * When set, the observable category joins fail with it instead of emitting.
      *
      * Mutable so a test can make an attempt fail, then let a retry succeed - a failure that could
      * not be recovered from would only ever exercise half of the retry path. Assignment and read
      * are single-threaded within a test, so this does not need synchronising.
      */
     var failure: Throwable? = null
+
+    /**
+     * When set, removes fail with it instead of removing anything.
+     *
+     * Mutable for the same reason [failure] is: a test has to be able to make a delete fail and then
+     * let the retry succeed. It models a database that cannot be written *at all* - nothing is
+     * removed, so a caller that reported a success anyway would be caught.
+     */
+    var deleteFailure: Throwable? = null
 
     override suspend fun insert(transaction: TransactionEntity): Long {
         val id = if (transaction.id != 0L) transaction.id else nextId++
@@ -72,22 +84,15 @@ class FakeTransactionDao(
         if (failure != null) return flow { throw failure }
 
         return flowOf(
-            rows.values
-                .sortedWith(NEWEST_FIRST)
-                .mapNotNull { row ->
-                    categoryNames[row.categoryId]?.let { name ->
-                        TransactionWithCategory(
-                            id = row.id,
-                            type = row.type,
-                            amountPaise = row.amountPaise,
-                            categoryId = row.categoryId,
-                            description = row.description,
-                            transactionDate = row.transactionDate,
-                            categoryName = name,
-                        )
-                    }
-                },
+            rows.values.sortedWith(NEWEST_FIRST).mapNotNull { row -> withCategory(row) },
         )
+    }
+
+    override fun observeByIdWithCategory(id: Long): Flow<TransactionWithCategory?> {
+        val failure = failure
+        if (failure != null) return flow { throw failure }
+
+        return flowOf(rows[id]?.let { row -> withCategory(row) })
     }
 
     override fun observeInDateRange(from: LocalDate, to: LocalDate): Flow<List<TransactionEntity>> =
@@ -104,8 +109,36 @@ class FakeTransactionDao(
     )
 
     override suspend fun delete(transaction: TransactionEntity) {
+        deleteFailure?.let { throw it }
+
         rows.remove(transaction.id)
     }
+
+    override suspend fun deleteById(id: Long): Int {
+        deleteFailure?.let { throw it }
+
+        deletedIds += id
+        return if (rows.remove(id) != null) 1 else 0
+    }
+
+    /** Joins one row to its category's name the way the real query does, dropping it if absent. */
+    private fun withCategory(row: TransactionEntity): TransactionWithCategory? =
+        categoryNames[row.categoryId]?.let { name ->
+            TransactionWithCategory(
+                id = row.id,
+                type = row.type,
+                amountPaise = row.amountPaise,
+                categoryId = row.categoryId,
+                description = row.description,
+                notes = row.notes,
+                quantityThousandths = row.quantityThousandths,
+                ratePaise = row.ratePaise,
+                transactionDate = row.transactionDate,
+                createdAt = row.createdAt,
+                updatedAt = row.updatedAt,
+                categoryName = name,
+            )
+        }
 
     private companion object {
         val NEWEST_FIRST: Comparator<TransactionEntity> =

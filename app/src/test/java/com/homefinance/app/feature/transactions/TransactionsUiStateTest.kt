@@ -2,6 +2,7 @@ package com.homefinance.app.feature.transactions
 
 import com.homefinance.app.data.local.relation.TransactionWithCategory
 import com.homefinance.app.data.model.TransactionType
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import org.junit.Assert.assertEquals
@@ -319,13 +320,21 @@ class TransactionsUiStateTest {
         amountPaise: Long = 1_000L,
         description: String? = null,
         transactionDate: LocalDate = TODAY,
+        notes: String? = null,
+        quantityThousandths: Long? = null,
+        ratePaise: Long? = null,
     ): TransactionWithCategory = TransactionWithCategory(
         id = id,
         type = type,
         amountPaise = amountPaise,
         categoryId = 1L,
         description = description,
+        notes = notes,
+        quantityThousandths = quantityThousandths,
+        ratePaise = ratePaise,
         transactionDate = transactionDate,
+        createdAt = RECORDED_AT,
+        updatedAt = RECORDED_AT,
         categoryName = categoryName,
     )
 
@@ -338,5 +347,8 @@ class TransactionsUiStateTest {
         val THIS_MONTH: LocalDate = TODAY
         val LAST_MONTH: LocalDate = TODAY.minusMonths(1)
         val OLDEST_MONTH: LocalDate = TODAY.minusMonths(2)
+
+        /** When every row in these tests was written. The list draws none of it; the read model carries it. */
+        val RECORDED_AT: Instant = Instant.parse("2026-10-14T05:00:00Z")
     }
 }

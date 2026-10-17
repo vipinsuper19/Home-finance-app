@@ -31,18 +31,45 @@ data object SettingsRoute
 data object AddTransactionRoute
 
 /**
- * The route of the **nested graph** that holds the add form and its category picker.
+ * One transaction's details, opened from its row in the ledger.
  *
- * It is a graph rather than a plain destination because the two screens are one flow: they share a
- * single [com.homefinance.app.feature.addtransaction.AddTransactionViewModel] scoped to this graph's
- * back stack entry, so the category chosen on the picker is the same fact the form renders, with no
- * result passing through navigation. Nothing navigates *to* this route - the form's own route is
- * where the flow is entered - but the graph needs a route like any other destination, because that
- * is what the shared view model is scoped to and what both screens look each other up by.
+ * The id is carried as an argument rather than held anywhere else, so the screen reads the
+ * transaction the household actually tapped. It is a `Long` - the ledger's primary key, not a
+ * position in a list - so a row that moves when the list re-sorts cannot make this screen show a
+ * different transaction.
  */
 @Serializable
-data object AddTransactionGraph
+data class TransactionDetailRoute(val transactionId: Long)
 
-/** The category picker, opened from the add form and never from the ledgers' own list. */
+/**
+ * The edit form for one transaction, opened from that transaction's details.
+ *
+ * It carries the same id, and for the same reason: the form reads the row it is about to change
+ * rather than being handed a copy of it, so the figures it shows are the ones in the database and
+ * the write goes back to that row and no other.
+ */
+@Serializable
+data class EditTransactionRoute(val transactionId: Long)
+
+/**
+ * The route of the **nested graph** that holds the two transaction forms and the category picker
+ * they both open.
+ *
+ * It is a graph rather than a set of plain destinations because each form and its picker are one
+ * flow: they share a single [com.homefinance.app.feature.addtransaction.AddTransactionViewModel]
+ * scoped to this graph's back stack entry, so the category chosen on the picker is the same fact the
+ * form renders, with no result passing through navigation. Nothing navigates *to* this route - the
+ * flow is entered at one of the two forms - but the graph needs a route like any other destination,
+ * because that is what the shared view model is scoped to and what the screens look each other up by.
+ *
+ * Both forms live in the one graph, and that is deliberate rather than incidental: entering either
+ * of them pushes a *new* graph entry, so each visit gets its own view model, and the picker's route
+ * then needs to be declared exactly once. There is no path from one form to the other, so the two
+ * can never be on the stack together and the shared entry can never hold the wrong one's figures.
+ */
+@Serializable
+data object TransactionFormGraph
+
+/** The category picker, opened from either form and never from the ledger's own list. */
 @Serializable
 data object CategoryPickerRoute

@@ -19,13 +19,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The bottom bar's behaviour around the add-transaction flow.
+ * The bottom bar's behaviour around the transaction flows.
  *
  * Two things have to hold, and neither is a pointer count on a route list. On the ledger the
  * Transactions tab must be the selected one - the shell always draws the bar over a tab, so if the
  * bar could not map that destination back to a section it would appear with *nothing* selected. And
- * on the add form and its category picker the bar must not be drawn at all, because that flow takes
- * the whole screen.
+ * on everything that belongs to one transaction - its details, the two forms, and the picker they
+ * open - the bar must not be drawn at all, because each of those takes the whole screen.
  *
  * The bar is composed here the way [HomeFinanceShell] composes it - same destinations, same
  * conditional, same [showsBottomBar] - over a real navigation graph, so what is asserted is the
@@ -79,11 +79,70 @@ class AddTransactionNavigationTest {
         composeTestRule.onNodeWithText(barLabel).assertExists()
     }
 
+    @Test
+    fun theBottomBarIsGoneOnOneTransactionsDetailsAndOnTheFormThatChangesIt() {
+        val navController = render()
+
+        composeTestRule.onNodeWithText(barLabel).assertExists()
+
+        composeTestRule.runOnUiThread {
+            navController.navigate(TransactionDetailRoute(transactionId = 7L))
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText(barLabel).assertDoesNotExist()
+
+        composeTestRule.runOnUiThread {
+            navController.navigate(EditTransactionRoute(transactionId = 7L))
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText(barLabel).assertDoesNotExist()
+
+        composeTestRule.runOnUiThread { navController.popBackStack(TransactionsRoute, false) }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText(barLabel).assertExists()
+    }
+
+    /**
+     * The tab is named even on the screens the bar is hidden on, so if the two decisions ever
+     * disagree the bar cannot end up drawn with nothing selected.
+     *
+     * The bar is composed over these destinations on purpose - the one place a test asks for the
+     * opposite of what ships - because that is the only way to observe the bar's own mapping of a
+     * route whose real screen deliberately has no bar under it.
+     */
+    @Test
+    fun theBarMapsEveryTransactionDestinationToTheTransactionsTab() {
+        val navController = render(alwaysShowBar = true)
+
+        // The ledger keeps the bar in production too, so it is the baseline for this walk.
+        composeTestRule.onNode(isSelected()).assertExists()
+
+        listOf<Any>(
+            TransactionDetailRoute(transactionId = 7L),
+            AddTransactionRoute,
+            EditTransactionRoute(transactionId = 7L),
+            CategoryPickerRoute,
+        ).forEach { route ->
+            composeTestRule.runOnUiThread { navController.navigate(route) }
+            composeTestRule.waitForIdle()
+
+            // One tab is drawn and it must be selected: `isOn` has to know every one of these
+            // routes, or it would answer "no section is current".
+            composeTestRule.onNode(isSelected()).assertExists()
+
+            composeTestRule.runOnUiThread { navController.popBackStack() }
+            composeTestRule.waitForIdle()
+        }
+    }
+
     /**
      * Renders the shell's own construction over a graph holding the destinations this is about, and
      * returns the controller so the test can walk the graph.
+     *
+     * @param alwaysShowBar ignores [showsBottomBar] and draws the bar regardless, which only
+     *   [theBarMapsEveryTransactionDestinationToTheTransactionsTab] asks for.
      */
-    private fun render(): NavHostController {
+    private fun render(alwaysShowBar: Boolean = false): NavHostController {
         lateinit var navController: NavHostController
 
         composeTestRule.setContent {
@@ -93,7 +152,7 @@ class AddTransactionNavigationTest {
                 val currentDestination = backStackEntry?.destination
 
                 Column {
-                    if (currentDestination.showsBottomBar()) {
+                    if (alwaysShowBar || currentDestination.showsBottomBar()) {
                         HomeFinanceBottomBar(
                             // One tab is enough: with the bar on screen at all, "some tab is
                             // selected" and "the Transactions tab is selected" are the same
@@ -107,6 +166,8 @@ class AddTransactionNavigationTest {
                         composable<TransactionsRoute> { Text(text = "ledger") }
                         composable<AddTransactionRoute> { Text(text = "add form") }
                         composable<CategoryPickerRoute> { Text(text = "category picker") }
+                        composable<TransactionDetailRoute> { Text(text = "transaction details") }
+                        composable<EditTransactionRoute> { Text(text = "edit form") }
                     }
                 }
             }

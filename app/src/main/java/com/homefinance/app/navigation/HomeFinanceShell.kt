@@ -31,9 +31,9 @@ fun HomeFinanceShell(modifier: Modifier = Modifier) {
         modifier = modifier,
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            // The bar is left off the add-transaction flow entirely - see [showsBottomBar] - and
-            // when it is missing the scaffold's own padding falls back to the system bar inset, so
-            // the form still stops above the navigation bar rather than under it.
+            // The bar is left off the transaction flows entirely - see [showsBottomBar] - and when
+            // it is missing the scaffold's own padding falls back to the system bar inset, so a
+            // form still stops above the navigation bar rather than under it.
             if (currentDestination.showsBottomBar()) {
                 HomeFinanceBottomBar(
                     destinations = TopLevelDestination.entries,
@@ -53,17 +53,24 @@ fun HomeFinanceShell(modifier: Modifier = Modifier) {
 /**
  * True when the bottom bar belongs on screen for [this] destination.
  *
- * The add-transaction flow is the one part of the app that takes the whole screen. Recording an
- * entry is a single uninterrupted piece of work with its own Save at the bottom of it, and offering
- * four other places to go halfway through is the one thing that screen should not do; the design it
- * was built from has no navigation bar under it. Taking the bar away is also what lets the form fit
- * on one screen rather than hiding its own Save below the fold.
+ * Everything to do with one transaction takes the whole screen: the entry's details, the forms that
+ * record and change it, and the category picker they open. Recording or changing an entry is a single
+ * uninterrupted piece of work with its own action at the bottom of it, and offering four other places
+ * to go halfway through is the one thing those screens should not do; the designs they were built
+ * from have no navigation bar under them. Taking the bar away is also what lets a form fit on one
+ * screen rather than hiding its own action below the fold. The tab a transaction belongs to stays
+ * named meanwhile - see [HomeFinanceBottomBar] - so the bar can never appear with nothing selected.
+ *
+ * The ledger itself is a tab, so it keeps its bar.
  *
  * Null - before the nav host has composed for the first time - shows the bar, because the start
  * destination is always Home and the bar cannot flash away for a route that is not yet known.
  */
 internal fun NavDestination?.showsBottomBar(): Boolean = !(this?.hierarchy?.any { destination ->
-    destination.hasRoute<AddTransactionRoute>() || destination.hasRoute<CategoryPickerRoute>()
+    destination.hasRoute<TransactionDetailRoute>() ||
+        destination.hasRoute<AddTransactionRoute>() ||
+        destination.hasRoute<EditTransactionRoute>() ||
+        destination.hasRoute<CategoryPickerRoute>()
 } == true)
 
 /**

@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
 /**
- * The handful of glyphs the transaction list needs that Material's icon *core* set does not ship.
+ * The handful of glyphs the transaction screens need that Material's icon *core* set does not ship.
  *
  * ### Why these are drawn here rather than depended upon
  *
@@ -19,9 +19,9 @@ import androidx.compose.ui.unit.dp
  * manifest never had.
  *
  * Where Material's *core* set already has the right glyph it is used as-is (the trolley for
- * groceries is `Icons.Filled.ShoppingCart`); only the four shapes it lacks are drawn here. All of
- * them are solid-filled on a 24x24 viewport with the same visual weight, so a row's mark looks the
- * same whether it came from the platform or from this file.
+ * groceries is `Icons.Filled.ShoppingCart`); only the six shapes it lacks are drawn here. All of
+ * them are solid-filled on a 24x24 viewport with the same visual weight, so a mark looks the same
+ * whether it came from the platform or from this file.
  *
  * Each vector is a pure `val`: it is built once, never mutated, and safe to share across
  * compositions.
@@ -120,6 +120,45 @@ object HomeFinanceIcons {
             lineTo(8.75f, 21.5f)
             lineTo(7.125f, 20.2f)
             lineTo(5.5f, 21.5f)
+            close()
+        }
+    }
+
+    /**
+     * Money going out: an arrow pointing down, to the ledger's floor.
+     *
+     * The transaction details screen labels the direction of the movement with this arrow as well
+     * as with colour. Colour alone is the one cue a household with a colour vision deficiency
+     * cannot read, and "which way did this go" is not a detail they should have to guess - so the
+     * direction is also a shape, and the shape is the same one in both themes.
+     *
+     * Drawn as a single silhouette - a stem with a triangular head wider than the stem - so it still
+     * reads as an arrow at the 18dp the details rows draw it at. [ArrowUp] is its exact mirror: the
+     * two are one shape rotated, not two drawings that could drift apart.
+     */
+    val ArrowDown: ImageVector = icon("ArrowDown") {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(10.75f, 2.5f)
+            lineTo(13.25f, 2.5f)
+            lineTo(13.25f, 12.75f)
+            lineTo(18.5f, 12.75f)
+            lineTo(12f, 21.5f)
+            lineTo(5.5f, 12.75f)
+            lineTo(10.75f, 12.75f)
+            close()
+        }
+    }
+
+    /** Money coming in: the same arrow pointing up. See [ArrowDown] for why it is drawn at all. */
+    val ArrowUp: ImageVector = icon("ArrowUp") {
+        path(fill = SolidColor(Color.Black)) {
+            moveTo(10.75f, 21.5f)
+            lineTo(13.25f, 21.5f)
+            lineTo(13.25f, 11.25f)
+            lineTo(18.5f, 11.25f)
+            lineTo(12f, 2.5f)
+            lineTo(5.5f, 11.25f)
+            lineTo(10.75f, 11.25f)
             close()
         }
     }

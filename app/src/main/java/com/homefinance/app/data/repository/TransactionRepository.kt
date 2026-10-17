@@ -9,6 +9,7 @@ import com.homefinance.app.data.model.TransactionType
 import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 /**
  * The sanctioned way for the rest of the app to read and write transactions.
@@ -85,6 +86,26 @@ class TransactionRepository(
     ): Flow<List<TransactionEntity>> = transactionDao.observeByTypeInDateRange(type, from, to)
 
     suspend fun getById(id: Long): TransactionEntity? = transactionDao.getById(id)
+
+    /**
+     * The single transaction with [id], carrying the name of its category, or `null` when there is
+     * no such transaction.
+     *
+     * The details screen reads through here. It is a pass-through with no rules of its own, for the
+     * same reason [observeAllWithCategory] is: reading has no invariants to defend.
+     */
+    fun observeByIdWithCategory(id: Long): Flow<TransactionWithCategory?> =
+        transactionDao.observeByIdWithCategory(id)
+
+    /**
+     * The transaction with [id] as it stood when it was read, or `null` when there is none.
+     *
+     * A one-shot read, unlike [observeByIdWithCategory], because the only caller is the edit form:
+     * it fills its fields from this once and then hands the form to the household. Observing the row
+     * while they type would let the database overwrite what they are writing.
+     */
+    suspend fun getByIdWithCategory(id: Long): TransactionWithCategory? =
+        transactionDao.observeByIdWithCategory(id).first()
 
     /**
      * Records a transaction and returns its new `id`.
@@ -164,8 +185,66 @@ class TransactionRepository(
         )
     }
 
+    /**
+     * Rewrites the transaction with [id] from the figures the household just edited, and reports
+     * whether there was still such a transaction to rewrite.
+     *
+     * The caller passes only what an edit can change. `id` and `createdAt` are not among the
+     * arguments, and that is the point: an edit cannot move a transaction to a new identity or
+     * backdate the day it was first recorded, because neither value is ever taken from the caller.
+     * `updatedAt` is re-stamped from [now] by [update].
+     *
+     * @return `true` when the row was rewritten, `false` when no transaction has [id]. A `false` is
+     *   not a failure of this call - the entry was deleted from another screen, or under another
+     *   finger, while the form was open - so the caller reports it as "this transaction no longer
+     *   exists" rather than as an error of editing. Crucially, the row is **not** re-created:
+     *   writing an insert here would resurrect a deleted transaction as a brand new one.
+     *
+     * @throws IllegalArgumentException on exactly the same grounds as [add]: a non-positive amount,
+     *   a missing category, a category of the wrong type, or a quantity, rate and amount that
+     *   disagree.
+     */
+    suspend fun update(
+        id: Long,
+        type: TransactionType,
+        amountPaise: Long,
+        categoryId: Long,
+        transactionDate: LocalDate,
+        description: String? = null,
+        notes: String? = null,
+        quantityThousandths: Long? = null,
+        ratePaise: Long? = null,
+        now: Instant = Instant.now(),
+    ): Boolean {
+        val existing = transactionDao.getById(id) ?: return false
+
+        update(
+            existing.copy(
+                type = type,
+                amountPaise = amountPaise,
+                categoryId = categoryId,
+                transactionDate = transactionDate,
+                description = description,
+                notes = notes,
+                quantityThousandths = quantityThousandths,
+                ratePaise = ratePaise,
+            ),
+            now,
+        )
+        return true
+    }
+
     /** Removes one transaction the caller explicitly selected. */
     suspend fun delete(transaction: TransactionEntity) = transactionDao.delete(transaction)
+
+    /**
+     * Removes the transaction with [id] and reports whether a row was actually removed.
+     *
+     * `false` means the transaction was already gone, which the household should be told rather
+     * than shown a success for a deletion that changed nothing. Every other transaction is
+     * untouched: the condition is the primary key, so it selects one row or none.
+     */
+    suspend fun deleteById(id: Long): Boolean = transactionDao.deleteById(id) > 0
 
     private fun requirePositiveAmount(amountPaise: Long) {
         require(amountPaise > 0L) {

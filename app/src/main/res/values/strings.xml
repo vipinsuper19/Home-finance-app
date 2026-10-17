@@ -80,7 +80,52 @@
     <string name="add_transaction_save">Save Transaction</string>
     <string name="add_transaction_saving">Saving...</string>
     <string name="add_transaction_save_error_category">That category is no longer available. Choose another.</string>
+    <string name="add_transaction_save_error_missing">This transaction no longer exists.</string>
     <string name="add_transaction_save_error_generic">Could not save. Nothing was changed.</string>
+
+    <!--
+      Edit transaction: the same form as above, opened on an existing entry. The field labels come
+      from the add_transaction_* keys because the form really is the same form; only the words this
+      screen adds of its own - its title, its button and the states of the read it starts with - are
+      named here.
+    -->
+    <string name="edit_transaction_title">Edit Transaction</string>
+    <string name="edit_transaction_save">Update Transaction</string>
+    <string name="edit_transaction_saving">Updating...</string>
+    <string name="edit_transaction_not_found_title">Transaction not found</string>
+    <string name="edit_transaction_not_found_message">This transaction is no longer in your records.</string>
+    <string name="edit_transaction_not_found_action">Back to transactions</string>
+    <string name="edit_transaction_error_title">Could not open transaction</string>
+    <string name="edit_transaction_error_message">Something went wrong while reading this transaction.</string>
+    <string name="edit_transaction_retry">Try again</string>
+
+    <!-- Transaction details, opened from a ledger row -->
+    <string name="transaction_detail_title">Transaction Details</string>
+    <string name="transaction_detail_loading">Loading transaction...</string>
+    <string name="transaction_detail_type_label">Type</string>
+    <string name="transaction_detail_category_label">Category</string>
+    <string name="transaction_detail_date_label">Date</string>
+    <string name="transaction_detail_amount_label">Amount</string>
+    <string name="transaction_detail_quantity_label">Quantity and rate</string>
+    <string name="transaction_detail_quantity_value">%1$s × %2$s</string>
+    <string name="transaction_detail_notes_label">Notes</string>
+    <string name="transaction_detail_created_label">Created</string>
+    <string name="transaction_detail_updated_label">Updated</string>
+    <string name="transaction_detail_edit">Edit</string>
+    <string name="transaction_detail_delete">Delete</string>
+    <string name="transaction_detail_not_found_title">Transaction not found</string>
+    <string name="transaction_detail_not_found_message">This transaction is no longer in your records.</string>
+    <string name="transaction_detail_not_found_action">Back to transactions</string>
+    <string name="transaction_detail_error_title">Could not load transaction</string>
+    <string name="transaction_detail_error_message">Something went wrong while reading this transaction.</string>
+    <string name="transaction_detail_retry">Try again</string>
+
+    <!-- Delete confirmation, opened from the details screen -->
+    <string name="transaction_delete_dialog_title">Delete transaction?</string>
+    <string name="transaction_delete_dialog_message">This transaction will be permanently removed from your records. This action cannot be undone.</string>
+    <string name="transaction_delete_dialog_confirm">Delete</string>
+    <string name="transaction_delete_dialog_deleting">Deleting...</string>
+    <string name="transaction_delete_error">Could not delete. Nothing was changed.</string>
 
     <!-- Category picker, opened from the form's Category row -->
     <string name="category_picker_title">Select category</string>

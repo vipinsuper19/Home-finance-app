@@ -3,10 +3,14 @@ package com.homefinance.app.data.local
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.homefinance.app.data.local.dao.CategoryDao
 import com.homefinance.app.data.local.dao.TransactionDao
+import com.homefinance.app.data.local.relation.TransactionWithCategory
 import com.homefinance.app.data.model.TransactionType
 import java.time.LocalDate
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -343,6 +347,142 @@ class TransactionDaoTest {
             assertEquals(900L, updated.amountPaise)
             assertEquals("August milk", updated.description)
             assertEquals(TEST_INSTANT.plusSeconds(60), updated.updatedAt)
+        }
+    }
+
+    // ------------------------------------------------- one entry's details
+
+    /**
+     * The details screen reads through this query, so it has to carry the *whole* row - not just the
+     * four things a ledger row draws - and the name of its own category.
+     */
+    @Test
+    fun observeByIdWithCategoryCarriesTheWholeRowAndItsOwnCategoryName() {
+        runBlocking {
+            val id = transactionDao.insert(
+                transaction(
+                    expenseCategoryId,
+                    amountPaise = 9_000L,
+                    transactionDate = TEST_DATE.minusDays(2),
+                    description = "Milk",
+                    notes = "Two bottles",
+                    quantityThousandths = 1_500L,
+                    ratePaise = 6_000L,
+                ),
+            )
+
+            val row = transactionDao.observeByIdWithCategory(id).first()!!
+
+            assertEquals(id, row.id)
+            assertEquals(TransactionType.EXPENSE, row.type)
+            assertEquals(9_000L, row.amountPaise)
+            assertEquals(expenseCategoryId, row.categoryId)
+            assertEquals("Milk", row.description)
+            assertEquals("Two bottles", row.notes)
+            assertEquals(1_500L, row.quantityThousandths)
+            assertEquals(6_000L, row.ratePaise)
+            assertEquals(TEST_DATE.minusDays(2), row.transactionDate)
+            assertEquals(TEST_INSTANT, row.createdAt)
+            assertEquals(TEST_INSTANT, row.updatedAt)
+            assertEquals("Groceries", row.categoryName)
+        }
+    }
+
+    @Test
+    fun observeByIdWithCategoryEmitsNullForAnIdentifierThatIsNotThere() {
+        runBlocking {
+            assertNull(transactionDao.observeByIdWithCategory(9_999L).first())
+        }
+    }
+
+    @Test
+    fun observeByIdWithCategoryNamesARetiredCategoryToo() {
+        runBlocking {
+            val id = transactionDao.insert(transaction(expenseCategoryId))
+            categoryDao.deactivate(expenseCategoryId)
+
+            // An edited entry keeps the category it was filed under, and the screen has to be able to
+            // say what that category was.
+            assertEquals(
+                "Groceries",
+                transactionDao.observeByIdWithCategory(id).first()!!.categoryName,
+            )
+        }
+    }
+
+    /**
+     * The details screen observes one row, so it must speak again when that row changes and when it
+     * goes - which is what makes an edit show up on the screen it was opened from, and what makes a
+     * confirmed deletion end the screen rather than leaving it showing a transaction that is no
+     * longer there.
+     *
+     * The collector runs alongside the writes rather than being re-read after each one, because a
+     * re-read would pass even if the flow never spoke again.
+     */
+    @Test
+    fun observeByIdWithCategorySpeaksAgainWhenTheRowChangesAndWhenItGoes() {
+        runBlocking {
+            val id = transactionDao.insert(transaction(expenseCategoryId, amountPaise = 100L))
+            val emissions = Channel<TransactionWithCategory?>(Channel.UNLIMITED)
+
+            val collector = launch {
+                transactionDao.observeByIdWithCategory(id).collect { emissions.send(it) }
+            }
+
+            try {
+                assertEquals(100L, withTimeout(10_000) { emissions.receive() }!!.amountPaise)
+
+                transactionDao.update(transactionDao.getById(id)!!.copy(amountPaise = 500L))
+                assertEquals(500L, withTimeout(10_000) { emissions.receive() }!!.amountPaise)
+
+                transactionDao.deleteById(id)
+                assertNull(withTimeout(10_000) { emissions.receive() })
+            } finally {
+                collector.cancel()
+            }
+        }
+    }
+
+    // --------------------------------------------------- deleting by identifier
+
+    @Test
+    fun deleteByIdRemovesExactlyTheRowAndReportsTheCount() {
+        runBlocking {
+            val kept = transactionDao.insert(transaction(expenseCategoryId, amountPaise = 100L))
+            val removed = transactionDao.insert(transaction(expenseCategoryId, amountPaise = 200L))
+
+            assertEquals(1, transactionDao.deleteById(removed))
+
+            assertNull(transactionDao.getById(removed))
+            assertNotNull(transactionDao.getById(kept))
+            assertEquals(1, transactionDao.observeAll().first().size)
+        }
+    }
+
+    @Test
+    fun deleteByIdReportsNothingRemovedWhenTheIdentifierIsAlreadyGone() {
+        runBlocking {
+            val id = transactionDao.insert(transaction(expenseCategoryId))
+            transactionDao.deleteById(id)
+
+            // `0` is the database's own answer to "was it still there?", and it is what lets the
+            // screen refuse to report a deletion it did not perform.
+            assertEquals(0, transactionDao.deleteById(id))
+        }
+    }
+
+    @Test
+    fun deleteByIdDoesNotTakeTheCategoryOrItsOtherTransactionsWithIt() {
+        runBlocking {
+            val other = transactionDao.insert(transaction(expenseCategoryId, amountPaise = 100L))
+            val removed = transactionDao.insert(transaction(expenseCategoryId, amountPaise = 200L))
+
+            transactionDao.deleteById(removed)
+
+            assertEquals(1, transactionDao.observeAllWithCategory().first().size)
+            assertEquals(other, transactionDao.observeAllWithCategory().first().single().id)
+            // The category is untouched: a transaction going is not a category going.
+            assertNotNull(categoryDao.getById(expenseCategoryId))
         }
     }
 }

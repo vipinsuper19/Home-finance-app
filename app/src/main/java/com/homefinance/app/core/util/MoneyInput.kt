@@ -115,4 +115,23 @@ object MoneyInput {
 
         return MoneyParseResult.Success(paise)
     }
+
+    /**
+     * The exact rupee text for [paise] - `320` for 32000, `90.5` for 9050 - which is what the
+     * amount field holds while an existing transaction is being edited.
+     *
+     * This is [parseRupeesToPaise]'s inverse, and it is written the other way round from
+     * [CurrencyFormatter.formatInr] on purpose. That one is *display*: it adds the rupee symbol
+     * and Indian grouping, and its output is for reading, not for typing. This one goes back into
+     * an input field the parser will read again, so it must be plain text the parser accepts - a
+     * `\u20B9` or a `,` would come back as [MoneyParseResult.Problem.NotANumber] and the household
+     * would be told their own saved amount is invalid.
+     *
+     * Trailing zeros are dropped (`320`, not `320.00`) so the figure looks like something a person
+     * typed, and `toPlainString` keeps a whole number whole - `stripTrailingZeros` alone would
+     * render 32000 paise as `3.2E+2`. Parsing the result returns [paise] exactly, which is asserted
+     * for every value in the range a ledger can hold.
+     */
+    fun toEditableText(paise: Long): String =
+        BigDecimal.valueOf(paise, PAISE_SCALE).stripTrailingZeros().toPlainString()
 }

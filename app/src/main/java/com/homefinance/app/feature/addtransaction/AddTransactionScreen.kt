@@ -72,7 +72,10 @@ import com.homefinance.app.data.model.TransactionType
 import java.time.LocalDate
 
 /**
- * The add-income / add-expense form.
+ * The form that records an income or an expense.
+ *
+ * This is the add half of the form; [EditTransactionScreen] is the other, and both draw the same
+ * [AddTransactionContent].
  *
  * ### Where the data comes from
  *
@@ -104,10 +107,11 @@ import java.time.LocalDate
  *
  * ### Insets and the shell
  *
- * This is the one flow the shell draws no bottom bar for - see
- * [com.homefinance.app.navigation.HomeFinanceShell] - so the form takes the whole screen and its
- * Save sits at the foot of it. System-bar padding still belongs to the shell's single `Scaffold`, and
- * [HomeFinanceTopBar] zeroes its own insets, so nothing here adds padding for them.
+ * This is one of the two flows the shell draws no bottom bar for - the other is
+ * [EditTransactionScreen] - see [com.homefinance.app.navigation.HomeFinanceShell] - so the form takes
+ * the whole screen and its Save sits at the foot of it. System-bar padding still belongs to the
+ * shell's single `Scaffold`, and [HomeFinanceTopBar] zeroes its own insets, so nothing here adds
+ * padding for them.
  */
 @Composable
 fun AddTransactionScreen(
@@ -127,6 +131,9 @@ fun AddTransactionScreen(
 
     AddTransactionContent(
         uiState = uiState,
+        title = stringResource(R.string.add_transaction_title),
+        actionLabel = stringResource(R.string.add_transaction_save),
+        progressLabel = stringResource(R.string.add_transaction_saving),
         onBack = onBack,
         onTypeChange = viewModel::onTypeChange,
         onAmountChange = viewModel::onAmountChange,
@@ -143,15 +150,23 @@ fun AddTransactionScreen(
 }
 
 /**
- * The form's body, taking its state and every action as parameters.
+ * The form's body, taking its state, its wording and every action as parameters.
  *
  * Split out from [AddTransactionScreen] the same way [com.homefinance.app.feature.transactions]
  * splits its screen, so every state - including a failed save that a real database will not produce
  * on demand - can be rendered and asserted directly.
+ *
+ * The three labels are arguments rather than constants because the same body is both screens: it
+ * records a new entry and it changes an existing one, and only the words around it differ. Passing
+ * them in keeps the body free of any notion of which job it is doing, which is what makes it the
+ * same form in both cases rather than two forms that look alike.
  */
 @Composable
 internal fun AddTransactionContent(
     uiState: AddTransactionUiState,
+    title: String,
+    actionLabel: String,
+    progressLabel: String,
     onBack: () -> Unit,
     onTypeChange: (TransactionType) -> Unit,
     onAmountChange: (String) -> Unit,
@@ -173,7 +188,7 @@ internal fun AddTransactionContent(
 
     Column(modifier = modifier.fillMaxSize()) {
         HomeFinanceTopBar(
-            title = stringResource(R.string.add_transaction_title),
+            title = title,
             onNavigationClick = onBack,
         )
 
@@ -240,6 +255,8 @@ internal fun AddTransactionContent(
             saveError = saveError?.let { stringResource(it.messageRes()) },
             isSaving = uiState.isSaving,
             saved = uiState.savedTransactionId != null,
+            actionLabel = actionLabel,
+            progressLabel = progressLabel,
             onClick = onSave,
         )
     }
@@ -270,6 +287,8 @@ private fun SaveFooter(
     saveError: String?,
     isSaving: Boolean,
     saved: Boolean,
+    actionLabel: String,
+    progressLabel: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -288,7 +307,13 @@ private fun SaveFooter(
             )
         }
 
-        SaveButton(isSaving = isSaving, saved = saved, onClick = onClick)
+        SaveButton(
+            isSaving = isSaving,
+            saved = saved,
+            actionLabel = actionLabel,
+            progressLabel = progressLabel,
+            onClick = onClick,
+        )
     }
 }
 
@@ -689,11 +714,16 @@ private fun LabelledTextField(
  * Disabled while a save is in flight and after one has landed ([saved]) - the *button* refusing a
  * second tap and [AddTransactionViewModel.save] refusing it as well, because a disabled button is a
  * hint to the user and a guard in the view model is a guarantee.
+ *
+ * Its wording is an argument for the same reason the title is: recording says "Save Transaction" and
+ * changing one says "Update Transaction", and neither screen should have to know the other's words.
  */
 @Composable
 private fun SaveButton(
     isSaving: Boolean,
     saved: Boolean,
+    actionLabel: String,
+    progressLabel: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -712,9 +742,9 @@ private fun SaveButton(
                 color = LocalContentColor.current,
             )
             Spacer(modifier = Modifier.width(12.dp))
-            Text(text = stringResource(R.string.add_transaction_saving))
+            Text(text = progressLabel)
         } else {
-            Text(text = stringResource(R.string.add_transaction_save))
+            Text(text = actionLabel)
         }
     }
 }
@@ -805,6 +835,7 @@ private fun QuantityParseResult.Problem.messageRes(): Int = when (this) {
 @StringRes
 private fun SaveError.messageRes(): Int = when (this) {
     SaveError.CategoryUnavailable -> R.string.add_transaction_save_error_category
+    SaveError.TransactionMissing -> R.string.add_transaction_save_error_missing
     is SaveError.Failed -> R.string.add_transaction_save_error_generic
 }
 
@@ -821,6 +852,9 @@ private fun AddTransactionContentPreview() {
                 description = "Vegetables",
                 notes = "Bought at the Sunday market",
             ),
+            title = "Add Transaction",
+            actionLabel = "Save Transaction",
+            progressLabel = "Saving...",
             onBack = {},
             onTypeChange = {},
             onAmountChange = {},

@@ -1,6 +1,7 @@
 package com.homefinance.app.feature.addtransaction
 
 import androidx.lifecycle.ViewModelStore
+import com.homefinance.app.core.util.MoneyInput
 import com.homefinance.app.core.util.MoneyParseResult
 import com.homefinance.app.core.util.QuantityParseResult
 import com.homefinance.app.data.local.dao.CategoryDao
@@ -806,6 +807,290 @@ class AddTransactionViewModelTest {
         assertEquals(0, transactions.inserted.size)
     }
 
+    // ---------------------------------------------------------------- editing
+
+    @Test
+    fun anEditFormIsNotDrawnUntilItHasReadTheRowItIsChanging() {
+        val viewModel = editViewModel()
+
+        // Before any coroutine has run the form has nothing to show. Drawing the empty add form here
+        // would be a form the household could fill in and save over a transaction nobody had read.
+        assertEquals(EditLoadState.Loading, viewModel.uiState.value.editLoad)
+    }
+
+    @Test
+    fun anEditFormFillsItselfInFromTheStoredRow() = runTest {
+        val viewModel = editViewModel(transactionDao = seededDao(storedTransaction()))
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(EditLoadState.Ready, state.editLoad)
+        assertEquals(TransactionType.EXPENSE, state.type)
+        assertEquals(TODAY.minusDays(2), state.date)
+        assertEquals("90", state.amountInput)
+        assertEquals(CategoryOption(id = 1L, name = "Groceries"), state.category)
+        assertEquals("Milk", state.description)
+        assertEquals("Two bottles", state.notes)
+        assertEquals(false, state.useQuantityAndRate)
+        assertNull(state.amountError)
+        assertNull(state.savedTransactionId)
+    }
+
+    @Test
+    fun theAmountIsPrefilledAsTextTheParserWouldAccept() = runTest {
+        val viewModel = editViewModel(
+            transactionDao = seededDao(storedTransaction(amountPaise = 10_050L)),
+        )
+        advanceUntilIdle()
+
+        // Not "₹100.50": a symbol or a grouping comma would come back as NotANumber and the
+        // household would be told their own saved amount is invalid.
+        assertEquals("100.5", viewModel.uiState.value.amountInput)
+        assertEquals(
+            MoneyParseResult.Success(10_050L),
+            MoneyInput.parseRupeesToPaise(viewModel.uiState.value.amountInput),
+        )
+    }
+
+    @Test
+    fun anEntryRecordedByQuantityAndRateIsPrefilledWithTheSwitchOn() = runTest {
+        val viewModel = editViewModel(
+            transactionDao = seededDao(
+                storedTransaction(
+                    amountPaise = 9_000L,
+                    quantityThousandths = 1_500L,
+                    ratePaise = 6_000L,
+                ),
+            ),
+        )
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(true, state.useQuantityAndRate)
+        assertEquals("1.5", state.quantityInput)
+        assertEquals("60", state.rateInput)
+        assertEquals(9_000L, state.derivedAmountPaise)
+    }
+
+    @Test
+    fun anEntryFiledUnderARetiredCategoryStillShowsThatCategory() = runTest {
+        val viewModel = editViewModel(
+            categoryDao = FakeCategoryDao(
+                listOf(category(1L, "Old Rent", TransactionType.EXPENSE, isActive = false)),
+            ),
+            transactionDao = FakeTransactionDao(
+                categoryNames = mapOf(1L to "Old Rent"),
+                initial = listOf(storedTransaction(categoryId = 1L)),
+            ),
+        )
+        advanceUntilIdle()
+
+        // The name is the one it was filed under. The picker will not offer it again - that is what
+        // retiring a category means - but the entry keeps its own.
+        assertEquals(CategoryOption(id = 1L, name = "Old Rent"), viewModel.uiState.value.category)
+        assertEquals(emptyList<String>(), options(viewModel).map { it.name })
+    }
+
+    @Test
+    fun anEditFormForATransactionThatIsGoneSaysSoAndWritesNothing() = runTest {
+        val transactions = seededDao(storedTransaction(id = 1L))
+        val viewModel = editViewModel(transactionDao = transactions, editingId = 42L)
+        advanceUntilIdle()
+
+        assertEquals(EditLoadState.NotFound, viewModel.uiState.value.editLoad)
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(0, transactions.inserted.size)
+        assertEquals(0, transactions.updated.size)
+        assertNull(viewModel.uiState.value.savedTransactionId)
+    }
+
+    @Test
+    fun aFailedReadOfTheRowIsReportedAndCanBeRetried() = runTest {
+        val transactions = seededDao(storedTransaction())
+        transactions.failure = IOException("the database could not be read")
+        val viewModel = editViewModel(transactionDao = transactions)
+
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.editLoad is EditLoadState.Failed)
+
+        transactions.failure = null
+        viewModel.retryEditLoad()
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertEquals(EditLoadState.Ready, state.editLoad)
+        assertEquals("90", state.amountInput)
+    }
+
+    @Test
+    fun retryingAFailedReadLeavesAnAddFormAlone() = runTest {
+        val viewModel = viewModelWith()
+        advanceUntilIdle()
+
+        viewModel.retryEditLoad()
+        advanceUntilIdle()
+
+        assertEquals(EditLoadState.Ready, viewModel.uiState.value.editLoad)
+    }
+
+    @Test
+    fun savingAnEditRewritesTheRowInsteadOfRecordingANewOne() = runTest {
+        val transactions = seededDao(storedTransaction())
+        val viewModel = editViewModel(transactionDao = transactions)
+        advanceUntilIdle()
+
+        viewModel.onAmountChange("125")
+        viewModel.save()
+        advanceUntilIdle()
+
+        // The one thing an edit must never do: a second entry, and the "changed" one not the one the
+        // household changed.
+        assertEquals(0, transactions.inserted.size)
+        assertEquals(1, transactions.updated.size)
+
+        val rewritten = transactions.updated.single()
+        assertEquals(1L, rewritten.id)
+        assertEquals(12_500L, rewritten.amountPaise)
+        assertEquals(AUDIT_INSTANT, rewritten.createdAt)
+        assertEquals(1L, viewModel.uiState.value.savedTransactionId)
+    }
+
+    @Test
+    fun aSavedEditPreventsASecondWriteFromASecondTap() = runTest {
+        val transactions = seededDao(storedTransaction())
+        val viewModel = editViewModel(transactionDao = transactions)
+        advanceUntilIdle()
+        viewModel.onAmountChange("125")
+
+        viewModel.save()
+        advanceUntilIdle()
+        viewModel.save()
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(1, transactions.updated.size)
+        assertEquals(0, transactions.inserted.size)
+    }
+
+    @Test
+    fun aDoubleTapWhileAnEditIsInFlightWritesOnce() = runTest {
+        val transactions = seededDao(storedTransaction())
+        val viewModel = editViewModel(transactionDao = transactions)
+        advanceUntilIdle()
+        viewModel.onAmountChange("125")
+
+        // Both taps land before the write has returned, which is the window the guard exists for.
+        viewModel.save()
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(1, transactions.updated.size)
+    }
+
+    @Test
+    fun anEditWhoseRowWasDeletedMeanwhileReportsItRatherThanInsertingItBack() = runTest {
+        val transactions = seededDao(storedTransaction())
+        val viewModel = editViewModel(transactionDao = transactions)
+        advanceUntilIdle()
+        viewModel.onAmountChange("125")
+
+        // Another screen - or another finger - removed the entry while this form was open.
+        transactions.deleteById(1L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(SaveError.TransactionMissing, viewModel.uiState.value.saveError)
+        assertNull(viewModel.uiState.value.savedTransactionId)
+        assertEquals(0, transactions.inserted.size)
+        assertEquals(0, transactions.updated.size)
+    }
+
+    @Test
+    fun anEditStillRefusesAnAmountItCannotRead() = runTest {
+        val transactions = seededDao(storedTransaction())
+        val viewModel = editViewModel(transactionDao = transactions)
+        advanceUntilIdle()
+
+        viewModel.onAmountChange("12.345")
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(
+            MoneyParseResult.Problem.TooManyDecimalPlaces,
+            viewModel.uiState.value.amountError,
+        )
+        assertEquals(0, transactions.updated.size)
+    }
+
+    @Test
+    fun anEditStillRefusesAChangeWithNoCategory() = runTest {
+        val transactions = seededDao(storedTransaction())
+        val viewModel = editViewModel(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Groceries", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+        viewModel.onTypeChange(TransactionType.INCOME)
+        advanceUntilIdle()
+
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showCategoryError)
+        assertEquals(0, transactions.updated.size)
+    }
+
+    @Test
+    fun anEditSwitchingTheQuantityAndRateOffSavesTheAmountAsPlainMoney() = runTest {
+        val transactions = seededDao(
+            storedTransaction(
+                amountPaise = 9_000L,
+                quantityThousandths = 1_500L,
+                ratePaise = 6_000L,
+            ),
+        )
+        val viewModel = editViewModel(transactionDao = transactions)
+        advanceUntilIdle()
+
+        viewModel.onQuantityAndRateToggled(false)
+        viewModel.onAmountChange("95")
+        viewModel.save()
+        advanceUntilIdle()
+
+        val rewritten = transactions.updated.single()
+        assertEquals(9_500L, rewritten.amountPaise)
+        assertNull(rewritten.quantityThousandths)
+        assertNull(rewritten.ratePaise)
+    }
+
+    @Test
+    fun anEditCarriesTheTypeSwitchThroughToTheStoredRow() = runTest {
+        val categoryDao = FakeCategoryDao(
+            listOf(
+                category(1L, "Groceries", TransactionType.EXPENSE),
+                category(2L, "Salary", TransactionType.INCOME),
+            ),
+        )
+        val transactions = FakeTransactionDao(
+            categoryNames = mapOf(1L to "Groceries", 2L to "Salary"),
+            initial = listOf(storedTransaction()),
+        )
+        val viewModel = editViewModel(categoryDao = categoryDao, transactionDao = transactions)
+        advanceUntilIdle()
+
+        viewModel.onTypeChange(TransactionType.INCOME)
+        advanceUntilIdle()
+        viewModel.onCategorySelected(2L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        val rewritten = transactions.updated.single()
+        assertEquals(TransactionType.INCOME, rewritten.type)
+        assertEquals(2L, rewritten.categoryId)
+    }
+
     // ---------------------------------------------------------------- fixtures
 
     /** The categories currently offered, asserting the list has actually loaded. */
@@ -825,6 +1110,48 @@ class AddTransactionViewModelTest {
         initialType = initialType,
         today = TODAY,
     ).also { viewModelStore.put("add", it) }
+
+    private fun editViewModel(
+        transactionDao: TransactionDao = FakeTransactionDao(),
+        categoryDao: CategoryDao = FakeCategoryDao(
+            listOf(category(1L, "Groceries", TransactionType.EXPENSE)),
+        ),
+        editingId: Long = 1L,
+    ): AddTransactionViewModel = AddTransactionViewModel(
+        transactions = TransactionRepository(transactionDao, categoryDao),
+        categories = CategoryRepository(categoryDao),
+        initialType = TransactionType.EXPENSE,
+        editingId = editingId,
+        today = TODAY,
+    ).also { viewModelStore.put("edit", it) }
+
+    /** A fake ledger holding [row], with the category name its id resolves to. */
+    private fun seededDao(row: TransactionEntity): FakeTransactionDao =
+        FakeTransactionDao(categoryNames = mapOf(row.categoryId to "Groceries"), initial = listOf(row))
+
+    private fun storedTransaction(
+        id: Long = 1L,
+        type: TransactionType = TransactionType.EXPENSE,
+        amountPaise: Long = 9_000L,
+        categoryId: Long = 1L,
+        description: String? = "Milk",
+        notes: String? = "Two bottles",
+        quantityThousandths: Long? = null,
+        ratePaise: Long? = null,
+        transactionDate: LocalDate = TODAY.minusDays(2),
+    ): TransactionEntity = TransactionEntity(
+        id = id,
+        type = type,
+        amountPaise = amountPaise,
+        categoryId = categoryId,
+        description = description,
+        notes = notes,
+        quantityThousandths = quantityThousandths,
+        ratePaise = ratePaise,
+        transactionDate = transactionDate,
+        createdAt = AUDIT_INSTANT,
+        updatedAt = AUDIT_INSTANT,
+    )
 
     private fun category(
         id: Long,

@@ -1,7 +1,9 @@
 package com.homefinance.app.core.util
 
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -10,6 +12,9 @@ private const val PATTERN = "d MMM yyyy"
 
 /** Abbreviated month name, year - for example `Oct 2026`. */
 private const val MONTH_PATTERN = "MMM yyyy"
+
+/** Day, month, year, then the time on a 12-hour clock - for example `14 Oct 2026, 10:30 AM`. */
+private const val TIMESTAMP_PATTERN = "d MMM yyyy, h:mm a"
 
 /**
  * Formats the calendar dates a household reads: the day a transaction's money moved.
@@ -49,4 +54,28 @@ object DateFormatter {
      */
     fun formatMonth(yearMonth: YearMonth, locale: Locale = Locale.getDefault()): String =
         DateTimeFormatter.ofPattern(MONTH_PATTERN, locale).format(yearMonth)
+
+    /**
+     * Formats an **audit** timestamp - when a row was first written or last changed - for example
+     * `14 Oct 2026, 10:30 AM`.
+     *
+     * This is the one place an [Instant] is formatted, and it does not contradict [format]'s rule
+     * that the *transaction date* is never run through a zone: the two are different facts. The
+     * transaction date is the calendar day the household says the money moved, which is the same day
+     * in every timezone and is therefore stored as a plain day. `createdAt` and `updatedAt` are
+     * instants the device recorded, they have no calendar meaning of their own, and the only truthful
+     * way to show one is in the zone the reader is in - so this is the conversion that *should* be
+     * zone-dependent, and it says so.
+     *
+     * The layout is pinned here for the same reason [PATTERN] is: `h:mm a` with the day first reads
+     * the same on every device, where a platform-supplied date-time order would put the month,
+     * day and year in whichever order the locale prefers.
+     */
+    fun formatTimestamp(
+        instant: Instant,
+        zone: ZoneId = ZoneId.systemDefault(),
+        locale: Locale = Locale.getDefault(),
+    ): String =
+        DateTimeFormatter.ofPattern(TIMESTAMP_PATTERN, locale)
+            .format(instant.atZone(zone))
 }

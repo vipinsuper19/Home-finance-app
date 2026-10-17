@@ -123,6 +123,21 @@ object QuantityInput {
     }
 
     /**
+     * The exact quantity text for [quantityThousandths] - `1.5` for 1500, `2` for 2000 - which is
+     * what the quantity field holds while an existing entry is being edited.
+     *
+     * [parseToThousandths]'s inverse, written the way [MoneyInput.toEditableText] is and for the
+     * same reason: it goes back into an input field, so it must be plain text the parser accepts
+     * rather than the rounded, unit-suffixed text a person reads. Trailing zeros are dropped so the
+     * figure looks like something that was typed, and parsing the result returns
+     * [quantityThousandths] exactly.
+     */
+    fun toEditableText(quantityThousandths: Long): String =
+        BigDecimal.valueOf(quantityThousandths, THOUSANDTHS_SCALE)
+            .stripTrailingZeros()
+            .toPlainString()
+
+    /**
      * The exact paise for [quantityThousandths] units bought at [ratePaise] each, rounded half-up to
      * the nearest paise, or `null` when the product does not fit in a `Long` paise count.
      *

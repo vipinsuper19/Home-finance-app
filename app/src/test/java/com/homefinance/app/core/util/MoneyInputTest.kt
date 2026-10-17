@@ -132,5 +132,67 @@ class MoneyInputTest {
         }
     }
 
+    // ------------------------------------------------------------ toEditableText
+
+    @Test
+    fun editableTextIsThePlainFigureTheParserWouldReadBack() {
+        assertEquals("100", MoneyInput.toEditableText(10_000L))
+        assertEquals("100.5", MoneyInput.toEditableText(10_050L))
+        assertEquals("0.25", MoneyInput.toEditableText(25L))
+        assertEquals("0.1", MoneyInput.toEditableText(10L))
+    }
+
+    @Test
+    fun editableTextHasNoSymbolOrGroupingToConfuseTheParser() {
+        // ₹1,00,000.00 is what the household *reads*; `100000` is what the field must hold, because
+        // the parser would refuse a rupee sign or a comma as NotANumber.
+        val editable = MoneyInput.toEditableText(10_000_000L)
+
+        assertEquals("100000", editable)
+        assertEquals(MoneyParseResult.Success(10_000_000L), parse(editable))
+    }
+
+    @Test
+    fun aWholeNumberOfRupeesIsNotWrittenInScientificNotation() {
+        // `stripTrailingZeros` on its own renders 32000 paise as `3.2E+2`; `toPlainString` is what
+        // keeps the figure something a person could have typed.
+        assertEquals("320", MoneyInput.toEditableText(32_000L))
+        assertEquals("1000", MoneyInput.toEditableText(100_000L))
+    }
+
+    @Test
+    fun editableTextRoundTripsEveryBoundaryValue() {
+        val values = listOf(
+            1L,
+            9L,
+            10L,
+            99L,
+            100L,
+            101L,
+            12_345L,
+            99_999_999L,
+            Long.MAX_VALUE,
+        )
+
+        values.forEach { paise ->
+            val text = MoneyInput.toEditableText(paise)
+            assertEquals(
+                "round trip of $paise through '$text'",
+                MoneyParseResult.Success(paise),
+                parse(text),
+            )
+        }
+    }
+
+    @Test
+    fun editingAnAmountAndSavingItUnchangedStoresTheSamePaise() {
+        // The one property that matters for the edit form: prefill, touch nothing, save, and the
+        // amount is what it was rather than one paise out.
+        val stored = 10_050L
+        val prefilled = MoneyInput.toEditableText(stored)
+
+        assertEquals(MoneyParseResult.Success(stored), parse(prefilled))
+    }
+
     private fun parse(raw: String): MoneyParseResult = MoneyInput.parseRupeesToPaise(raw)
 }

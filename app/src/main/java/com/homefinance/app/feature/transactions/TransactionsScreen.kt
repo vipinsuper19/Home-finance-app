@@ -1,5 +1,6 @@
 package com.homefinance.app.feature.transactions
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,6 +92,7 @@ import java.time.YearMonth
 @Composable
 fun TransactionsScreen(
     onAddTransaction: () -> Unit,
+    onOpenTransaction: (Long) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: TransactionsViewModel = viewModel(factory = TransactionsViewModel.Factory),
 ) {
@@ -103,6 +106,7 @@ fun TransactionsScreen(
         onMonthChange = viewModel::onMonthChange,
         onClearFilters = viewModel::clearFilters,
         onAddTransaction = onAddTransaction,
+        onOpenTransaction = onOpenTransaction,
         modifier = modifier,
     )
 }
@@ -122,6 +126,7 @@ internal fun TransactionsContent(
     onMonthChange: (YearMonth) -> Unit,
     onClearFilters: () -> Unit,
     onAddTransaction: () -> Unit,
+    onOpenTransaction: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -159,6 +164,7 @@ internal fun TransactionsContent(
                     onTypeFilterChange = onTypeFilterChange,
                     onMonthChange = onMonthChange,
                     onClearFilters = onClearFilters,
+                    onOpenTransaction = onOpenTransaction,
                 )
             }
 
@@ -195,6 +201,7 @@ private fun ContentBody(
     onTypeFilterChange: (TransactionTypeFilter) -> Unit,
     onMonthChange: (YearMonth) -> Unit,
     onClearFilters: () -> Unit,
+    onOpenTransaction: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -250,6 +257,7 @@ private fun ContentBody(
 
                 else -> TransactionList(
                     groups = state.groups,
+                    onOpenTransaction = onOpenTransaction,
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -451,6 +459,7 @@ private fun MonthFilterChip(
 @Composable
 private fun TransactionList(
     groups: List<TransactionDateGroup>,
+    onOpenTransaction: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -462,7 +471,10 @@ private fun TransactionList(
                 DateHeading(group = group)
             }
             items(items = group.items, key = { it.id }) { item ->
-                TransactionRow(item = item)
+                TransactionRow(
+                    item = item,
+                    onClick = { onOpenTransaction(item.id) },
+                )
             }
         }
     }
@@ -503,16 +515,24 @@ private fun DateHeading(
 }
 
 /**
- * One ledger entry.
+ * One ledger entry, and the way into it.
  *
  * The mark is a circle holding the glyph for the category, and the text block takes the leftover
  * width (`weight(1f)`) while the amount keeps its intrinsic width - so a long category name or
  * description is ellipsised instead of pushing the amount off the row or wrapping it onto a second
  * line where it would read as a different number.
+ *
+ * The whole row is the control that opens the entry's details. It is one tap target the width of the
+ * row rather than a chevron at its edge, because tapping a row to see more of it is what a list is
+ * for, and a target that is the full row is easier to hit than a 24dp glyph. `Role.Button` is what
+ * tells a screen reader the row can be activated; no `contentDescription` is added, because the row's
+ * own words - category, description, amount - are the description, and replacing them would hide the
+ * figures the household came to read.
  */
 @Composable
 private fun TransactionRow(
     item: TransactionListItem,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val description = item.description
@@ -521,6 +541,7 @@ private fun TransactionRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -699,6 +720,7 @@ private fun TransactionsContentPreview() {
             onMonthChange = {},
             onClearFilters = {},
             onAddTransaction = {},
+            onOpenTransaction = {},
         )
     }
 }

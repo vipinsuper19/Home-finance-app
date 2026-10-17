@@ -58,19 +58,58 @@ interface TransactionDao {
      */
     @Query(
         """
-        SELECT t.id                 AS id,
-               t.type               AS type,
-               t.amount_paise       AS amount_paise,
-               t.category_id        AS category_id,
-               t.description        AS description,
-               t.transaction_date   AS transaction_date,
-               c.name               AS category_name
+        SELECT t.id                   AS id,
+               t.type                 AS type,
+               t.amount_paise         AS amount_paise,
+               t.category_id          AS category_id,
+               t.description          AS description,
+               t.notes                AS notes,
+               t.quantity_thousandths AS quantity_thousandths,
+               t.rate_paise           AS rate_paise,
+               t.transaction_date     AS transaction_date,
+               t.created_at           AS created_at,
+               t.updated_at           AS updated_at,
+               c.name                 AS category_name
         FROM transactions AS t
         INNER JOIN categories AS c ON c.id = t.category_id
         ORDER BY t.transaction_date DESC, t.id DESC
         """,
     )
     fun observeAllWithCategory(): Flow<List<TransactionWithCategory>>
+
+    /**
+     * Observes the single transaction with [id], carrying the name of its category, or emits `null`
+     * when there is no such transaction any more.
+     *
+     * A `Flow` rather than a one-shot read because the details screen must keep telling the truth
+     * after the entry has been edited from that very screen: Room re-runs this and the figures on
+     * screen change with it, instead of the household being shown the row as it was when they opened
+     * it.
+     *
+     * `null` is a value here, not an error. A transaction being deleted - by this device, a moment
+     * ago - is an ordinary thing for the household to have done, and the screen answers it with a
+     * sentence rather than with a failure.
+     */
+    @Query(
+        """
+        SELECT t.id                   AS id,
+               t.type                 AS type,
+               t.amount_paise         AS amount_paise,
+               t.category_id          AS category_id,
+               t.description          AS description,
+               t.notes                AS notes,
+               t.quantity_thousandths AS quantity_thousandths,
+               t.rate_paise           AS rate_paise,
+               t.transaction_date     AS transaction_date,
+               t.created_at           AS created_at,
+               t.updated_at           AS updated_at,
+               c.name                 AS category_name
+        FROM transactions AS t
+        INNER JOIN categories AS c ON c.id = t.category_id
+        WHERE t.id = :id
+        """,
+    )
+    fun observeByIdWithCategory(id: Long): Flow<TransactionWithCategory?>
 
     /**
      * Observes the transactions dated between [from] and [to] **inclusive**, newest first.
@@ -101,4 +140,20 @@ interface TransactionDao {
      */
     @Delete
     suspend fun delete(transaction: TransactionEntity)
+
+    /**
+     * Removes the transaction with [id] and reports how many rows that actually removed.
+     *
+     * The count is the point. "Delete this row" is an instruction the household gave from a screen
+     * that was showing them a row; whether the database still held that row when the instruction
+     * arrived is a fact only the database can settle, and the alternative - read the row, then
+     * delete it - would decide it a moment too early. The single statement is also atomic, so two
+     * deletions of the same entry cannot both report success.
+     *
+     * `0` therefore means "there was nothing to delete", which the caller reports honestly rather
+     * than as a failure of the deletion itself. Deleting by primary key is as narrow as [delete]:
+     * there is still no way to express "delete everything that matches".
+     */
+    @Query("DELETE FROM transactions WHERE id = :id")
+    suspend fun deleteById(id: Long): Int
 }

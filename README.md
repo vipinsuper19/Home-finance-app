@@ -5,8 +5,8 @@ A simple, offline-first Android application for managing household income, expen
 Home Finance is being built to make everyday financial tracking easier, including daily household expenses such as milk, monthly bills such as rent, and income received from tenants or other sources.
 
 > **Development status:** MVP in progress. The application shell, the local financial data layer,
-> and the transaction list and add form are in place and verified. Editing, reporting, and export
-> are planned.
+> and the transaction list, add form, details, edit form and delete confirmation are in place and
+> verified. Reporting and export are planned.
 
 ## Features
 
@@ -25,13 +25,15 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Add income and add expense forms with exact paise parsing, validation, a date picker, and optional description and notes.
 - A separate category picker screen, listing the categories of the current type and offering to create one when there are none yet.
 - Optional quantity-and-rate entry for things bought by weight or volume, such as milk, with the amount derived from the two figures and stored alongside them.
-- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, repository validation, money and quantity input parsing, date conversion, transaction list filtering and grouping, category mark selection, and the add-transaction form state.
-- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety, and the transaction list, add-transaction form and category picker screens.
+- A transaction details screen, opened by tapping a ledger row, showing the type, category, date, amount, optional quantity-and-rate, notes and the audit timestamps, with clear Edit and Delete actions.
+- Edit of an existing transaction through the same form the add screen uses, prefilled from the stored row and updating it in place: the row keeps its identifier and the day it was first recorded, and only the day it was last changed is re-stamped.
+- Delete with a confirmation dialog that says the removal cannot be undone, reporting a failure without removing anything and letting the list update itself from the database.
+- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, repository validation, money and quantity input parsing and their edit round trips, date and timestamp formatting, transaction list filtering and grouping, category mark selection, and the add, edit and details screen states.
+- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety, and the transaction list, add-transaction form, edit-transaction form, category picker and transaction details screens.
 - No backend or account registration required for the current architecture.
 
 ### Planned
 
-- Edit and delete existing transactions.
 - Manage categories: rename, retire, and restore them.
 - Track daily milk purchases over time, now that a single purchase can be recorded by quantity and rate.
 - Manage recurring household expenses.
@@ -104,6 +106,7 @@ app/
 │   │   │   ├── feature/
 │   │   │   │   ├── home/
 │   │   │   │   ├── transactions/
+│   │   │   │   ├── transactiondetail/
 │   │   │   │   ├── addtransaction/
 │   │   │   │   ├── recurring/
 │   │   │   │   ├── reports/
@@ -237,7 +240,7 @@ Database migrations and backup/restore behavior will be implemented and tested a
 | Task 2.2 | Core financial entities, DAOs, and validation | Completed |
 | Task 3.1 | Transaction list and UI state | Completed |
 | Task 3.2 | Add income and expense forms | Completed |
-| Task 3.3 | Edit and delete transactions | Planned |
+| Task 3.3 | Edit and delete transactions | Completed |
 | Task 4 | Recurring expense engine | Planned |
 | Task 5 | Milk tracking and rental income management | Planned |
 | Task 6 | Reminders and local notifications | Planned |

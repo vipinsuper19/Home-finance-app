@@ -179,6 +179,45 @@ class QuantityInputTest {
         assertEquals(9_000L, QuantityInput.amountPaise(quantity.thousandths, rate.paise))
     }
 
+    // ------------------------------------------------------------ toEditableText
+
+    @Test
+    fun editableTextIsThePlainQuantityTheParserWouldReadBack() {
+        assertEquals("1.5", QuantityInput.toEditableText(1_500L))
+        assertEquals("2", QuantityInput.toEditableText(2_000L))
+        assertEquals("0.001", QuantityInput.toEditableText(1L))
+        assertEquals("0.25", QuantityInput.toEditableText(250L))
+    }
+
+    @Test
+    fun aWholeQuantityIsNotWrittenInScientificNotation() {
+        assertEquals("1000", QuantityInput.toEditableText(1_000_000L))
+    }
+
+    @Test
+    fun editableTextRoundTripsEveryBoundaryValue() {
+        val values = listOf(1L, 999L, 1_000L, 1_001L, 1_500L, 2_500_000L, Long.MAX_VALUE)
+
+        values.forEach { thousandths ->
+            val text = QuantityInput.toEditableText(thousandths)
+            assertEquals(
+                "round trip of $thousandths through '$text'",
+                QuantityParseResult.Success(thousandths),
+                parse(text),
+            )
+        }
+    }
+
+    @Test
+    fun editingAQuantityAndSavingItUnchangedStoresTheSameThousandths() {
+        val stored = 1_250L
+
+        assertEquals(
+            QuantityParseResult.Success(stored),
+            parse(QuantityInput.toEditableText(stored)),
+        )
+    }
+
     private fun parse(raw: String): QuantityParseResult = QuantityInput.parseToThousandths(raw)
 
     private fun amountPaise(quantityThousandths: Long, ratePaise: Long): Long? =

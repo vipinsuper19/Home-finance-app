@@ -381,6 +381,171 @@ class RepositoryDatabaseIntegrationTest {
         }
     }
 
+    // -------------------------------------------------------- editing by id
+
+    /**
+     * The whole point of the edit screen, against a real database: the row the form filled itself in
+     * from is the row that gets rewritten - same id, same `createdAt` - and there is still exactly
+     * one entry afterwards.
+     */
+    @Test
+    fun anEditRewritesTheRowItReadRatherThanRecordingAnother() {
+        runBlocking {
+            val categoryId = expenseCategory()
+            val id = transactionRepository.add(
+                TransactionType.EXPENSE,
+                500L,
+                categoryId,
+                date,
+                description = "Milk",
+                now = now,
+            )
+
+            val rewritten = transactionRepository.update(
+                id = id,
+                type = TransactionType.EXPENSE,
+                amountPaise = 12_500L,
+                categoryId = categoryId,
+                transactionDate = date.plusDays(1),
+                description = "Milk and curd",
+                notes = "Corner shop",
+                now = later,
+            )
+
+            assertTrue(rewritten)
+            assertEquals(1, transactionRepository.observeAll().first().size)
+
+            val stored = transactionRepository.getById(id)!!
+            assertEquals(id, stored.id)
+            assertEquals(12_500L, stored.amountPaise)
+            assertEquals(date.plusDays(1), stored.transactionDate)
+            assertEquals("Milk and curd", stored.description)
+            assertEquals("Corner shop", stored.notes)
+            assertEquals(now, stored.createdAt)
+            assertEquals(later, stored.updatedAt)
+        }
+    }
+
+    @Test
+    fun anEditOfARowThatHasGoneWritesNothingAndInsertsNothing() {
+        runBlocking {
+            val categoryId = expenseCategory()
+            val id = transactionRepository.add(TransactionType.EXPENSE, 500L, categoryId, date, now = now)
+            assertTrue(transactionRepository.deleteById(id))
+
+            val rewritten = transactionRepository.update(
+                id = id,
+                type = TransactionType.EXPENSE,
+                amountPaise = 900L,
+                categoryId = categoryId,
+                transactionDate = date,
+                now = later,
+            )
+
+            assertFalse(rewritten)
+            assertEquals(0, transactionRepository.observeAll().first().size)
+        }
+    }
+
+    @Test
+    fun anEditIsValidatedAgainstTheRealCategoryTable() {
+        runBlocking {
+            val expenseId = expenseCategory()
+            val incomeId = incomeCategory()
+            val id = transactionRepository.add(TransactionType.EXPENSE, 500L, expenseId, date, now = now)
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    transactionRepository.update(
+                        id = id,
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 500L,
+                        categoryId = incomeId,
+                        transactionDate = date,
+                        now = later,
+                    )
+                }
+            }
+
+            // Nothing was rewritten and nothing was restamped.
+            val stored = transactionRepository.getById(id)!!
+            assertEquals(expenseId, stored.categoryId)
+            assertEquals(now, stored.updatedAt)
+        }
+    }
+
+    @Test
+    fun anEditCanSwitchAnEntryFromAPlainAmountToAQuantityAndRateAndBack() {
+        runBlocking {
+            val categoryId = expenseCategory()
+            val id = transactionRepository.add(TransactionType.EXPENSE, 9_000L, categoryId, date, now = now)
+
+            transactionRepository.update(
+                id = id,
+                type = TransactionType.EXPENSE,
+                amountPaise = 9_000L,
+                categoryId = categoryId,
+                transactionDate = date,
+                quantityThousandths = 1_500L,
+                ratePaise = 6_000L,
+                now = later,
+            )
+            assertEquals(1_500L, transactionRepository.getById(id)!!.quantityThousandths)
+
+            transactionRepository.update(
+                id = id,
+                type = TransactionType.EXPENSE,
+                amountPaise = 9_500L,
+                categoryId = categoryId,
+                transactionDate = date,
+                now = later,
+            )
+
+            val stored = transactionRepository.getById(id)!!
+            assertNull(stored.quantityThousandths)
+            assertNull(stored.ratePaise)
+            assertEquals(9_500L, stored.amountPaise)
+        }
+    }
+
+    @Test
+    fun deletingByIdRemovesOneRowAndSaysWhetherItDid() {
+        runBlocking {
+            val categoryId = expenseCategory()
+            val kept = transactionRepository.add(TransactionType.EXPENSE, 100L, categoryId, date, now = now)
+            val removed = transactionRepository.add(TransactionType.EXPENSE, 200L, categoryId, date, now = now)
+
+            assertTrue(transactionRepository.deleteById(removed))
+            assertFalse(transactionRepository.deleteById(removed))
+
+            assertEquals(1, transactionRepository.observeAll().first().size)
+            assertNotNull(transactionRepository.getById(kept))
+        }
+    }
+
+    @Test
+    fun theRowReadForOneEntryCarriesItsCategoryNameFromTheRealJoin() {
+        runBlocking {
+            val categoryId = expenseCategory("Milk")
+            val id = transactionRepository.add(
+                TransactionType.EXPENSE,
+                2_500L,
+                categoryId,
+                date,
+                description = "Two litres",
+                now = now,
+            )
+
+            val row = transactionRepository.getByIdWithCategory(id)!!
+
+            assertEquals(id, row.id)
+            assertEquals("Milk", row.categoryName)
+            assertEquals(2_500L, row.amountPaise)
+            assertEquals("Two litres", row.description)
+            assertEquals(now, row.createdAt)
+        }
+    }
+
     // ------------------------------------------------------------- sharing
 
     /**

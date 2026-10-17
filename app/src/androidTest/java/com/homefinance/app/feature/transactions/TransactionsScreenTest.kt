@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasProgressBarRangeInfo
@@ -114,6 +115,45 @@ class TransactionsScreenTest {
     }
 
     // --------------------------------------------------------------------- content
+
+    @Test
+    fun tappingARowOpensThatRowAndNoOther() {
+        val opened = mutableListOf<Long>()
+
+        render(
+            uiState = content(
+                listOf(
+                    group(
+                        date = GROCERIES_DAY,
+                        items = arrayOf(
+                            item(id = 7L, categoryName = "Groceries", description = "Weekly shop"),
+                            item(id = 8L, categoryName = "Salary", type = TransactionType.INCOME),
+                        ),
+                    ),
+                ),
+            ),
+            onOpenTransaction = { opened += it },
+        )
+
+        // Tapped by its own text, which is what the household actually aims at - and the id that
+        // comes back is the row's database id, not its position in the list.
+        composeTestRule.onNodeWithText("Weekly shop").performClick()
+
+        assertEquals(listOf(7L), opened)
+    }
+
+    @Test
+    fun aRowIsAnnouncedAsSomethingThatCanBeOpened() {
+        render(
+            uiState = content(
+                listOf(group(date = GROCERIES_DAY, items = arrayOf(item(id = 7L, categoryName = "Groceries")))),
+            ),
+        )
+
+        // A row that opens something has to say so: without the button role a screen reader would
+        // read out the figures and give the household no idea the row is actionable.
+        composeTestRule.onNodeWithText("Groceries").assertHasClickAction()
+    }
 
     @Test
     fun eachRowShowsItsCategoryDescriptionAndAmount() {
@@ -351,6 +391,7 @@ class TransactionsScreenTest {
                 HomeFinanceTheme {
                     TransactionsScreen(
                         onAddTransaction = {},
+                        onOpenTransaction = {},
                         // The day the screen believes it is is pinned, so this test asserts the list
                         // rather than whichever month the device's clock happens to be in.
                         viewModel = TransactionsViewModel(transactions, today = TODAY),
@@ -391,6 +432,7 @@ class TransactionsScreenTest {
         onMonthChange: (YearMonth) -> Unit = {},
         onClearFilters: () -> Unit = {},
         onAddTransaction: () -> Unit = {},
+        onOpenTransaction: (Long) -> Unit = {},
     ) {
         composeTestRule.setContent {
             HomeFinanceTheme {
@@ -402,6 +444,7 @@ class TransactionsScreenTest {
                     onMonthChange = onMonthChange,
                     onClearFilters = onClearFilters,
                     onAddTransaction = onAddTransaction,
+                    onOpenTransaction = onOpenTransaction,
                 )
             }
         }

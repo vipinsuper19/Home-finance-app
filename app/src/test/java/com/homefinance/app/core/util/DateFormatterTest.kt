@@ -1,7 +1,9 @@
 package com.homefinance.app.core.util
 
+import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
+import java.time.ZoneId
 import java.util.Locale
 import java.util.TimeZone
 import org.junit.Assert.assertEquals
@@ -67,5 +69,54 @@ class DateFormatterTest {
     fun formatsEveryMonthWithItsOwnName() {
         assertEquals("Jan 2026", DateFormatter.formatMonth(YearMonth.of(2026, 1), Locale.ENGLISH))
         assertEquals("Dec 2026", DateFormatter.formatMonth(YearMonth.of(2026, 12), Locale.ENGLISH))
+    }
+
+    // ------------------------------------------------------------- timestamps
+
+    @Test
+    fun formatsAnAuditTimestampAsADayAndATime() {
+        val instant = Instant.parse("2026-10-14T05:00:00Z")
+
+        assertEquals(
+            "14 Oct 2026, 10:30 AM",
+            DateFormatter.formatTimestamp(instant, ZoneId.of("Asia/Kolkata"), Locale.ENGLISH),
+        )
+    }
+
+    @Test
+    fun anAuditTimestampIsShownInTheReadersOwnZone() {
+        // Unlike the transaction date, an audit timestamp is an instant the device recorded and has
+        // no calendar meaning of its own, so the two zones must genuinely disagree - which is the
+        // opposite of what the transaction-date test asserts.
+        val instant = Instant.parse("2026-10-14T18:30:00Z")
+
+        assertEquals(
+            "15 Oct 2026, 12:00 AM",
+            DateFormatter.formatTimestamp(instant, ZoneId.of("Asia/Kolkata"), Locale.ENGLISH),
+        )
+        assertEquals(
+            "14 Oct 2026, 11:30 AM",
+            DateFormatter.formatTimestamp(instant, ZoneId.of("America/Los_Angeles"), Locale.ENGLISH),
+        )
+    }
+
+    @Test
+    fun keepsDayFirstOrderForTimestampsToo() {
+        val instant = Instant.parse("2026-10-14T05:00:00Z")
+
+        assertEquals(
+            "14 Oct 2026, 10:30 AM",
+            DateFormatter.formatTimestamp(instant, ZoneId.of("Asia/Kolkata"), Locale.US),
+        )
+    }
+
+    @Test
+    fun aTimestampJustAfterMidnightShowsTheNewDay() {
+        val instant = Instant.parse("2026-10-13T18:31:00Z")
+
+        assertEquals(
+            "14 Oct 2026, 12:01 AM",
+            DateFormatter.formatTimestamp(instant, ZoneId.of("Asia/Kolkata"), Locale.ENGLISH),
+        )
     }
 }

@@ -49,7 +49,16 @@ class TransactionRepositoryTest {
     )
 
     private val categoryDao = FakeCategoryDao(listOf(groceries, salary, retiredRent))
-    private val transactionDao = FakeTransactionDao()
+    private val transactionDao = FakeTransactionDao(
+        // The names the fake's join resolves `category_id` against, standing in for the `categories`
+        // table. They mirror the entities above, because a row whose category is absent is dropped -
+        // exactly as the real `INNER JOIN` would.
+        categoryNames = mapOf(
+            groceries.id to groceries.name,
+            salary.id to salary.name,
+            retiredRent.id to retiredRent.name,
+        ),
+    )
     private val repository = TransactionRepository(transactionDao, categoryDao)
 
     // ---------------------------------------------------------------- add
@@ -537,6 +546,252 @@ class TransactionRepositoryTest {
         }
     }
 
+    // ------------------------------------------------- update by identifier
+
+    @Test
+    fun updateByIdRewritesEveryFigureAnEditCanChange() {
+        runBlocking {
+            val id = repository.add(
+                type = TransactionType.EXPENSE,
+                amountPaise = 500L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                description = "Milk",
+                notes = "Two bottles",
+                now = now,
+            )
+
+            val rewritten = repository.update(
+                id = id,
+                type = TransactionType.INCOME,
+                amountPaise = 90_000L,
+                categoryId = salary.id,
+                transactionDate = date.plusDays(3),
+                description = "Salary",
+                notes = "October",
+                now = later,
+            )
+
+            assertTrue(rewritten)
+            val stored = repository.getById(id)!!
+            assertEquals(TransactionType.INCOME, stored.type)
+            assertEquals(90_000L, stored.amountPaise)
+            assertEquals(salary.id, stored.categoryId)
+            assertEquals(date.plusDays(3), stored.transactionDate)
+            assertEquals("Salary", stored.description)
+            assertEquals("October", stored.notes)
+        }
+    }
+
+    @Test
+    fun updateByIdKeepsTheIdentifierAndTheDayItWasFirstRecorded() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+
+            repository.update(
+                id = id,
+                type = TransactionType.EXPENSE,
+                amountPaise = 750L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                now = later,
+            )
+
+            val stored = repository.getById(id)!!
+            // The id is the row's identity, not a field an edit may hand out, and createdAt is a
+            // record of when the household first wrote the entry down, not of when they last
+            // touched it.
+            assertEquals(id, stored.id)
+            assertEquals(now, stored.createdAt)
+            assertEquals(later, stored.updatedAt)
+        }
+    }
+
+    @Test
+    fun updateByIdAcceptsARetiredCategorySoAnEditedRowKeepsItsOwn() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, retiredRent.id, date, now = now)
+
+            val rewritten = repository.update(
+                id = id,
+                type = TransactionType.EXPENSE,
+                amountPaise = 800L,
+                categoryId = retiredRent.id,
+                transactionDate = date,
+                now = later,
+            )
+
+            assertTrue(rewritten)
+            assertEquals(retiredRent.id, repository.getById(id)!!.categoryId)
+        }
+    }
+
+    @Test
+    fun updateByIdReturnsFalseAndWritesNothingWhenTheTransactionHasGone() {
+        runBlocking {
+            val removed = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+            val kept = repository.add(TransactionType.EXPENSE, 600L, groceries.id, date, now = now)
+            repository.delete(repository.getById(removed)!!)
+
+            val rewritten = repository.update(
+                id = removed,
+                type = TransactionType.EXPENSE,
+                amountPaise = 999L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                now = later,
+            )
+
+            assertTrue(!rewritten)
+            // The refusal must not have been resolved by inserting a replacement: the household
+            // would be left with a brand new transaction and no idea where it came from.
+            assertNull(repository.getById(removed))
+            assertEquals(1, repository.observeAll().first().size)
+            assertEquals(600L, repository.getById(kept)!!.amountPaise)
+        }
+    }
+
+    @Test
+    fun updateByIdRejectsAZeroAmount() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.update(
+                        id = id,
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 0L,
+                        categoryId = groceries.id,
+                        transactionDate = date,
+                        now = later,
+                    )
+                }
+            }
+            assertEquals(500L, repository.getById(id)!!.amountPaise)
+        }
+    }
+
+    @Test
+    fun updateByIdRejectsACategoryOfTheWrongType() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.update(
+                        id = id,
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 500L,
+                        categoryId = salary.id,
+                        transactionDate = date,
+                        now = later,
+                    )
+                }
+            }
+            assertEquals(groceries.id, repository.getById(id)!!.categoryId)
+        }
+    }
+
+    @Test
+    fun updateByIdTrimsTheDescriptionAndNotesLikeAddDoes() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+
+            repository.update(
+                id = id,
+                type = TransactionType.EXPENSE,
+                amountPaise = 500L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                description = "  Milk  ",
+                notes = "   ",
+                now = later,
+            )
+
+            val stored = repository.getById(id)!!
+            assertEquals("Milk", stored.description)
+            assertNull(stored.notes)
+        }
+    }
+
+    @Test
+    fun updateByIdStoresAQuantityAndRateWhenTheEditSwitchesThemOn() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 9_000L, groceries.id, date, now = now)
+
+            repository.update(
+                id = id,
+                type = TransactionType.EXPENSE,
+                amountPaise = 9_000L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                quantityThousandths = 1_500L,
+                ratePaise = 6_000L,
+                now = later,
+            )
+
+            val stored = repository.getById(id)!!
+            assertEquals(1_500L, stored.quantityThousandths)
+            assertEquals(6_000L, stored.ratePaise)
+        }
+    }
+
+    @Test
+    fun updateByIdClearsAQuantityAndRateWhenTheEditSwitchesThemOff() {
+        runBlocking {
+            val id = repository.add(
+                type = TransactionType.EXPENSE,
+                amountPaise = 9_000L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                quantityThousandths = 1_500L,
+                ratePaise = 6_000L,
+                now = now,
+            )
+
+            repository.update(
+                id = id,
+                type = TransactionType.EXPENSE,
+                amountPaise = 9_500L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                quantityThousandths = null,
+                ratePaise = null,
+                now = later,
+            )
+
+            val stored = repository.getById(id)!!
+            // Not zeroes: a plain amount has no quantity at all, and 0 would say it bought nothing.
+            assertNull(stored.quantityThousandths)
+            assertNull(stored.ratePaise)
+            assertEquals(9_500L, stored.amountPaise)
+        }
+    }
+
+    @Test
+    fun updateByIdRefusesAQuantityAndRateThatDoNotAgreeWithTheAmount() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.update(
+                        id = id,
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 500L,
+                        categoryId = groceries.id,
+                        transactionDate = date,
+                        quantityThousandths = 1_000L,
+                        ratePaise = 9_000L,
+                        now = later,
+                    )
+                }
+            }
+            assertEquals(500L, repository.getById(id)!!.amountPaise)
+        }
+    }
+
     // ------------------------------------------------------------- delete
 
     @Test
@@ -549,6 +804,44 @@ class TransactionRepositoryTest {
 
             assertNull(repository.getById(removed))
             assertNotNull(repository.getById(kept))
+        }
+    }
+
+    @Test
+    fun deleteByIdRemovesTheRowAndReportsThatItDid() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+
+            assertTrue(repository.deleteById(id))
+            assertNull(repository.getById(id))
+        }
+    }
+
+    @Test
+    fun deleteByIdReportsFalseWhenThereWasNothingToRemove() {
+        runBlocking {
+            val other = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+
+            // A deletion the household asked for from a screen showing a row that had already gone.
+            // Reporting `true` would claim a removal that never happened.
+            assertTrue(!repository.deleteById(9_999L))
+            assertNotNull(repository.getById(other))
+        }
+    }
+
+    @Test
+    fun deleteByIdLeavesEveryOtherTransactionInPlace() {
+        runBlocking {
+            val first = repository.add(TransactionType.EXPENSE, 100L, groceries.id, date, now = now)
+            val second = repository.add(TransactionType.EXPENSE, 200L, groceries.id, date, now = now)
+            val third = repository.add(TransactionType.INCOME, 300L, salary.id, date, now = now)
+
+            repository.deleteById(second)
+
+            assertNotNull(repository.getById(first))
+            assertNull(repository.getById(second))
+            assertNotNull(repository.getById(third))
+            assertEquals(2, repository.observeAll().first().size)
         }
     }
 
@@ -590,6 +883,78 @@ class TransactionRepositoryTest {
 
             assertEquals(1, expenses.size)
             assertEquals(TransactionType.EXPENSE, expenses.single().type)
+        }
+    }
+
+    @Test
+    fun observeByIdWithCategoryCarriesTheWholeRowAndItsCategoryName() {
+        runBlocking {
+            val id = repository.add(
+                type = TransactionType.EXPENSE,
+                amountPaise = 9_000L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                description = "Milk",
+                notes = "Two bottles",
+                quantityThousandths = 1_500L,
+                ratePaise = 6_000L,
+                now = now,
+            )
+
+            val row = repository.observeByIdWithCategory(id).first()!!
+
+            assertEquals(id, row.id)
+            assertEquals("Groceries", row.categoryName)
+            assertEquals(groceries.id, row.categoryId)
+            assertEquals(9_000L, row.amountPaise)
+            assertEquals("Milk", row.description)
+            assertEquals("Two bottles", row.notes)
+            assertEquals(1_500L, row.quantityThousandths)
+            assertEquals(6_000L, row.ratePaise)
+            assertEquals(date, row.transactionDate)
+            assertEquals(now, row.createdAt)
+            assertEquals(now, row.updatedAt)
+        }
+    }
+
+    @Test
+    fun observeByIdWithCategoryIsNullForAnIdentifierThatIsNotThere() {
+        runBlocking {
+            assertNull(repository.observeByIdWithCategory(9_999L).first())
+            assertNull(repository.getByIdWithCategory(9_999L))
+        }
+    }
+
+    @Test
+    fun getByIdWithCategoryReadsTheRowOnce() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+
+            val row = repository.getByIdWithCategory(id)!!
+
+            assertEquals("Groceries", row.categoryName)
+            assertEquals(500L, row.amountPaise)
+        }
+    }
+
+    @Test
+    fun aRowReadBackAfterAnEditShowsTheNewFigures() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+            repository.update(
+                id = id,
+                type = TransactionType.EXPENSE,
+                amountPaise = 750L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                now = later,
+            )
+
+            val row = repository.observeByIdWithCategory(id).first()!!
+
+            assertEquals(750L, row.amountPaise)
+            assertEquals(now, row.createdAt)
+            assertEquals(later, row.updatedAt)
         }
     }
 }

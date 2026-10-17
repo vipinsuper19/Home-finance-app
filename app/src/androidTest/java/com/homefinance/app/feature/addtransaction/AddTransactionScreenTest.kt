@@ -27,8 +27,8 @@ import com.homefinance.app.data.local.entity.TransactionEntity
 import com.homefinance.app.data.model.TransactionType
 import com.homefinance.app.data.repository.CategoryRepository
 import com.homefinance.app.data.repository.TransactionRepository
-import com.homefinance.app.navigation.AddTransactionGraph
-import com.homefinance.app.navigation.addTransactionFlow
+import com.homefinance.app.navigation.TransactionFormGraph
+import com.homefinance.app.navigation.transactionFormFlow
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.first
@@ -51,7 +51,7 @@ import org.junit.runner.RunWith
  * walks it writes exactly the row it should.
  *
  * The two screens are hosted in the **real** graph, via
- * [com.homefinance.app.navigation.addTransactionFlow]. That matters here more than anywhere else:
+ * [com.homefinance.app.navigation.transactionFormFlow]. That matters here more than anywhere else:
  * the form and the picker share one view model scoped to that graph, and a category chosen on the
  * picker has to come back to the form with nothing passed through navigation. A test that composed
  * the two screens side by side would never exercise that, and would happily pass while the household
@@ -372,11 +372,16 @@ class AddTransactionScreenTest {
     // ---------------------------------------------------------------- fixtures
 
     /**
-     * Renders the real add-transaction graph over an in-memory database.
+     * Renders the real transaction form graph over an in-memory database.
      *
-     * The view model factory is the one production does not use - the overload that takes the
-     * repositories directly - so that the form is wired to a throwaway file rather than the
+     * The view model factories are the ones production does not use - the overloads that take the
+     * repositories directly - so that the forms are wired to a throwaway database rather than the
      * household's own ledger. Everything else is the shipped wiring.
+     *
+     * The edit form's factory is passed because the flow requires it, but no test in *this* class
+     * navigates to it: the graph's start destination is the add form, which is what these tests are
+     * about. The edit form is driven the same way from
+     * [com.homefinance.app.feature.addtransaction.EditTransactionScreenTest].
      */
     private fun render(
         initialType: TransactionType = TransactionType.EXPENSE,
@@ -393,16 +398,25 @@ class AddTransactionScreenTest {
                 // nothing else: in the app the graph hangs off the whole NavHost instead, and the
                 // form is reached by navigating to a route inside it. Either way the graph entry is
                 // on the back stack, which is what the two screens share their view model through.
-                NavHost(navController = navController, startDestination = AddTransactionGraph) {
-                    addTransactionFlow(
+                NavHost(navController = navController, startDestination = TransactionFormGraph) {
+                    transactionFormFlow(
                         navController = navController,
-                        viewModelFactory = AddTransactionViewModel.factory(
+                        addViewModelFactory = AddTransactionViewModel.factory(
                             initialType = initialType,
                             transactions = transactions,
                             categories = categories,
                         ),
+                        editViewModelFactory = { transactionId ->
+                            AddTransactionViewModel.factory(
+                                initialType = initialType,
+                                transactions = transactions,
+                                categories = categories,
+                                editingId = transactionId,
+                            )
+                        },
                         onBack = onBack,
                         onSaved = onSaved,
+                        onEdited = {},
                     )
                 }
             }

@@ -12,6 +12,7 @@ import com.homefinance.app.core.util.MoneyParseResult
 import com.homefinance.app.core.util.QuantityInput
 import com.homefinance.app.core.util.QuantityParseResult
 import com.homefinance.app.data.local.entity.CategoryEntity
+import com.homefinance.app.data.local.relation.TransactionWithCategory
 import com.homefinance.app.data.model.TransactionType
 import com.homefinance.app.data.repository.CategoryRepository
 import com.homefinance.app.data.repository.TransactionRepository
@@ -31,7 +32,21 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Backs the add-income / add-expense form *and* the category picker it opens.
+ * Backs the form that records a transaction, the form that changes one, and the category picker
+ * both of them open.
+ *
+ * ### One form, two jobs
+ *
+ * Recording an entry and changing one are the same work from the household's side - same fields,
+ * same amount arithmetic, same rules - so they are the same screen and the same view model rather
+ * than two of each that could drift apart. What differs is where the form *starts*: a new entry
+ * begins from today's date and the type the caller asked for, while an edit begins by reading the
+ * entry it is changing. That one read is [EditLoadState], the only phase editing has that adding
+ * does not.
+ *
+ * Passing [editingId] is what makes the difference, and it changes exactly two things: the form
+ * fills itself in from that row once, and [save] rewrites that row instead of inserting a new one.
+ * It never inserts a replacement: if the entry has been deleted, the save reports that instead.
  *
  * ### Why one state for two screens
  *
@@ -71,20 +86,33 @@ import kotlinx.coroutines.launch
  * ### Saving
  *
  * [save] does not report success on its own authority. It awaits the repository and only then
- * records the new id in [AddTransactionUiState.savedTransactionId]. Until that id exists the
- * button stays disabled and [save] refuses, so a double tap cannot write the same entry twice -
+ * records the transaction's id in [AddTransactionUiState.savedTransactionId]. Until that id exists
+ * the button stays disabled and [save] refuses, so a double tap cannot write the same entry twice -
  * including across a configuration change, because the flag lives in the view model, not the
  * composable.
+ *
+ * @param initialType the type a *new* entry starts on. Ignored when [editingId] is given, whose own
+ *   type replaces it as soon as the row has been read - the form is not drawn before then, so the
+ *   placeholder is never seen.
+ * @param editingId the transaction this form changes, or `null` to record a new one.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class AddTransactionViewModel(
     private val transactions: TransactionRepository,
     private val categories: CategoryRepository,
     initialType: TransactionType,
+    private val editingId: Long? = null,
     today: LocalDate = LocalDate.now(),
 ) : ViewModel() {
 
-    private val state = MutableStateFlow(AddTransactionUiState(type = initialType, date = today))
+    private val state = MutableStateFlow(
+        AddTransactionUiState(
+            type = initialType,
+            date = today,
+            // An edit has to read its row before it can draw itself; a new entry is ready at once.
+            editLoad = if (editingId == null) EditLoadState.Ready else EditLoadState.Loading,
+        ),
+    )
 
     /** The form exactly as the screen should render it. */
     val uiState: StateFlow<AddTransactionUiState> = state.asStateFlow()
@@ -100,6 +128,46 @@ class AddTransactionViewModel(
                 .flatMapLatest { observeActiveCategories(it) }
                 .collect { options -> state.update { it.copy(categories = options) } }
         }
+
+        if (editingId != null) loadForEdit()
+    }
+
+    /**
+     * Reads the entry being changed, once, and fills the form in from it.
+     *
+     * Once, deliberately: the household is about to type into these fields, and a live read would
+     * let the database overwrite the half-written edit under their hands.
+     *
+     * The read resolves the category's *name* as well as its id, so a row filed under a category
+     * that has since been retired still shows the name it was filed under. The name is not
+     * invented here - it is the one the join returned.
+     */
+    private fun loadForEdit() {
+        val id = editingId ?: return
+
+        viewModelScope.launch {
+            state.update { it.copy(editLoad = EditLoadState.Loading) }
+
+            val row = try {
+                transactions.getByIdWithCategory(id)
+            } catch (failure: Exception) {
+                state.update { it.copy(editLoad = EditLoadState.Failed(failure)) }
+                return@launch
+            }
+
+            state.update { current ->
+                if (row == null) {
+                    current.copy(editLoad = EditLoadState.NotFound)
+                } else {
+                    current.prefilledFrom(row)
+                }
+            }
+        }
+    }
+
+    /** Asks for the entry again after a failed read. Does nothing on a form that records a new one. */
+    fun retryEditLoad() {
+        if (editingId != null) loadForEdit()
     }
 
     /** Flips the form between income and expense. A category of the other type cannot be kept. */
@@ -190,7 +258,7 @@ class AddTransactionViewModel(
     }
 
     /**
-     * Validates the form and, if it passes, records the transaction.
+     * Validates the form and, if it passes, records or rewrites the transaction.
      *
      * Which amount is checked depends on the mode: the typed one, or the exact product of the quantity
      * and the rate. A product that is not positive is refused here rather than left to the repository,
@@ -204,7 +272,7 @@ class AddTransactionViewModel(
     fun save() {
         val current = state.value
         // Already writing, or already written and the screen has not left yet: a second tap must
-        // not produce a second row.
+        // not produce a second write.
         if (current.isSaving || current.savedTransactionId != null) return
 
         val amountPaise: Long
@@ -269,19 +337,45 @@ class AddTransactionViewModel(
             )
         }
 
+        val editing = editingId
         viewModelScope.launch {
             try {
-                val id = transactions.add(
-                    type = current.type,
-                    amountPaise = amountPaise,
-                    categoryId = category.id,
-                    transactionDate = current.date,
-                    description = current.description,
-                    notes = current.notes,
-                    quantityThousandths = quantityThousandths,
-                    ratePaise = ratePaise,
-                )
-                state.update { it.copy(isSaving = false, savedTransactionId = id) }
+                if (editing == null) {
+                    val id = transactions.add(
+                        type = current.type,
+                        amountPaise = amountPaise,
+                        categoryId = category.id,
+                        transactionDate = current.date,
+                        description = current.description,
+                        notes = current.notes,
+                        quantityThousandths = quantityThousandths,
+                        ratePaise = ratePaise,
+                    )
+                    state.update { it.copy(isSaving = false, savedTransactionId = id) }
+                } else {
+                    // Not `add`, ever: an edit that inserted would leave the household with two
+                    // entries and a "changed" one that was not the one they changed.
+                    val rewritten = transactions.update(
+                        id = editing,
+                        type = current.type,
+                        amountPaise = amountPaise,
+                        categoryId = category.id,
+                        transactionDate = current.date,
+                        description = current.description,
+                        notes = current.notes,
+                        quantityThousandths = quantityThousandths,
+                        ratePaise = ratePaise,
+                    )
+                    // The same id comes back as the "saved" one, so the screen leaves on success
+                    // exactly as it does after an insert.
+                    state.update {
+                        if (rewritten) {
+                            it.copy(isSaving = false, savedTransactionId = editing)
+                        } else {
+                            it.copy(isSaving = false, saveError = SaveError.TransactionMissing)
+                        }
+                    }
+                }
             } catch (refused: IllegalArgumentException) {
                 // The repository refused the write as impossible. From this screen that can only mean
                 // the category - the picker offers only the form's type and categories are never
@@ -384,17 +478,61 @@ class AddTransactionViewModel(
     private fun AddTransactionUiState.withDialogError(error: CategoryDialogError) =
         copy(categoryDialog = categoryDialog?.copy(isSaving = false, error = error))
 
+    /**
+     * Fills the form in from the row being changed.
+     *
+     * Every figure is written back as the household would have *typed* it - [MoneyInput.toEditableText]
+     * and [QuantityInput.toEditableText], not the display formatters - because these strings go into
+     * input fields the same parsers will read again. A row saved as `₹90.00` fills the amount field
+     * with `90`, and saving it unchanged stores 9000 paise again.
+     *
+     * The category is taken as a whole [CategoryOption] from the row's own id and the name the join
+     * returned, rather than by looking the id up in the offered list: an entry filed under a category
+     * that has since been retired must still show the name it was filed under. Re-selecting it from
+     * the picker is impossible, which is the point of retiring a category - it is not offered again -
+     * but the entry keeps its own.
+     *
+     * `useQuantityAndRate` follows the row's own shape rather than the form's last state, and the
+     * amount is filled in either way, so turning the switch off on a quantity-and-rate entry leaves
+     * the figure it was worth to be edited as a plain amount.
+     */
+    private fun AddTransactionUiState.prefilledFrom(row: TransactionWithCategory): AddTransactionUiState {
+        val quantityThousandths = row.quantityThousandths
+        val ratePaise = row.ratePaise
+
+        return copy(
+            type = row.type,
+            date = row.transactionDate,
+            amountInput = MoneyInput.toEditableText(row.amountPaise),
+            amountError = null,
+            category = CategoryOption(id = row.categoryId, name = row.categoryName),
+            showCategoryError = false,
+            description = row.description.orEmpty(),
+            notes = row.notes.orEmpty(),
+            useQuantityAndRate = quantityThousandths != null && ratePaise != null,
+            quantityInput = quantityThousandths?.let(QuantityInput::toEditableText).orEmpty(),
+            quantityError = null,
+            rateInput = ratePaise?.let(MoneyInput::toEditableText).orEmpty(),
+            rateError = null,
+            editLoad = EditLoadState.Ready,
+        )
+    }
+
     companion object {
 
         /**
-         * Builds the view model for a form opened with [initialType].
+         * Builds the view model for a form opened with [initialType], changing the transaction with
+         * [editingId] when one is given.
          *
          * Same one wiring seam as the rest of the app: the application class owns the single
          * database and its repositories, and there is deliberately no dependency-injection
-         * framework. [initialType] is a real argument because it is chosen by the caller rather
-         * than by the view model's constructor signature.
+         * framework. [initialType] and [editingId] are real arguments because they are chosen by
+         * the caller rather than by the view model's constructor signature.
          */
-        fun factory(initialType: TransactionType): ViewModelProvider.Factory = viewModelFactory {
+        fun factory(
+            initialType: TransactionType,
+            editingId: Long? = null,
+        ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 val application = checkNotNull(
                     this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY],
@@ -404,6 +542,7 @@ class AddTransactionViewModel(
                     transactions = (application as HomeFinanceApp).transactionRepository,
                     categories = application.categoryRepository,
                     initialType = initialType,
+                    editingId = editingId,
                 )
             }
         }
@@ -420,12 +559,14 @@ class AddTransactionViewModel(
             initialType: TransactionType,
             transactions: TransactionRepository,
             categories: CategoryRepository,
+            editingId: Long? = null,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 AddTransactionViewModel(
                     transactions = transactions,
                     categories = categories,
                     initialType = initialType,
+                    editingId = editingId,
                 )
             }
         }
