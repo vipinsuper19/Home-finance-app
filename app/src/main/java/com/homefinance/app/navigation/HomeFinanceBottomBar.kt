@@ -50,6 +50,11 @@ fun HomeFinanceBottomBar(
  * True when [destination] is the tab currently shown, including while a detail destination
  * opened from that tab is on top of it. The `when` is exhaustive, so adding a tab cannot
  * silently lose its highlight state.
+ *
+ * It covers every route the app has, including the add-transaction flow that
+ * [HomeFinanceShell] currently hides the bar on, so that the bar is correct on its own terms: it can
+ * always answer which section is current, and it never has to rely on somebody else having decided
+ * not to draw it.
  */
 private fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
     this?.hierarchy?.any { navDestination ->
@@ -59,10 +64,11 @@ private fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
                 // is on screen and the bar is never shown with no section selected.
                 navDestination.hasRoute<HomeRoute>() || navDestination.hasRoute<SettingsRoute>()
             TopLevelDestination.Transactions ->
-                // The add form is opened from this tab, so the tab stays highlighted while it is
-                // on screen and the bar is never shown with no section selected.
+                // The add form and the category picker it opens are both reached from this tab, so
+                // this tab is the one to name if either ever has the bar above it.
                 navDestination.hasRoute<TransactionsRoute>() ||
-                    navDestination.hasRoute<AddTransactionRoute>()
+                    navDestination.hasRoute<AddTransactionRoute>() ||
+                    navDestination.hasRoute<CategoryPickerRoute>()
             TopLevelDestination.Recurring -> navDestination.hasRoute<RecurringRoute>()
             TopLevelDestination.Reports -> navDestination.hasRoute<ReportsRoute>()
         }

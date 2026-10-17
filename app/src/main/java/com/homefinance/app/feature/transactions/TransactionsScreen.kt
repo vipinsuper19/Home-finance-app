@@ -1,6 +1,6 @@
 package com.homefinance.app.feature.transactions
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,28 +15,42 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -49,15 +63,17 @@ import com.homefinance.app.core.ui.theme.HomeFinanceTheme
 import com.homefinance.app.core.util.DateFormatter
 import com.homefinance.app.data.model.TransactionType
 import java.time.LocalDate
+import java.time.YearMonth
 
 /**
- * The ledger: every recorded income and expense, newest first.
+ * The ledger: every recorded income and expense, newest first, grouped under the day it happened.
  *
  * ### Where the data comes from
  *
  * The screen renders [TransactionsViewModel.uiState] and nothing else. It never touches a DAO or
  * a repository, never launches a coroutine and never queries anything while composing - the
- * database work happens in the view model, and Room pushes a new list when a row changes.
+ * database work happens in the view model, and Room pushes a new list when a row changes. Searching
+ * and filtering are no exception: they travel out as callbacks and come back as a new state.
  *
  * ### Insets and the shell
  *
@@ -67,6 +83,9 @@ import java.time.LocalDate
  *
  * The screen title lives in the top bar only. The body leads with its state, so "Transactions"
  * is never printed twice.
+ *
+ * There is deliberately no back arrow. This is a top-level tab that the bottom bar already owns;
+ * an arrow that navigated back to the tab it came from would be a control that does nothing.
  */
 @Composable
 fun TransactionsScreen(
@@ -79,6 +98,10 @@ fun TransactionsScreen(
     TransactionsContent(
         uiState = uiState,
         onRetry = viewModel::retry,
+        onQueryChange = viewModel::onQueryChange,
+        onTypeFilterChange = viewModel::onTypeFilterChange,
+        onMonthChange = viewModel::onMonthChange,
+        onClearFilters = viewModel::clearFilters,
         onAddTransaction = onAddTransaction,
         modifier = modifier,
     )
@@ -94,6 +117,10 @@ fun TransactionsScreen(
 internal fun TransactionsContent(
     uiState: TransactionsUiState,
     onRetry: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onTypeFilterChange: (TransactionTypeFilter) -> Unit,
+    onMonthChange: (YearMonth) -> Unit,
+    onClearFilters: () -> Unit,
     onAddTransaction: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -126,21 +153,13 @@ internal fun TransactionsContent(
                     },
                 )
 
-                is TransactionsUiState.Content -> if (uiState.items.isEmpty()) {
-                    // Loaded successfully and there is nothing to show: a success, and a
-                    // different thing from a failed read.
-                    StatusMessage(
-                        icon = Icons.AutoMirrored.Outlined.List,
-                        title = stringResource(R.string.transactions_empty_title),
-                        message = stringResource(R.string.transactions_empty_message),
-                        modifier = Modifier.align(Alignment.Center),
-                    )
-                } else {
-                    TransactionList(
-                        items = uiState.items,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
+                is TransactionsUiState.Content -> ContentBody(
+                    state = uiState,
+                    onQueryChange = onQueryChange,
+                    onTypeFilterChange = onTypeFilterChange,
+                    onMonthChange = onMonthChange,
+                    onClearFilters = onClearFilters,
+                )
             }
 
             // Offered in every state, including the empty one: recording the household's first
@@ -162,11 +181,406 @@ internal fun TransactionsContent(
 }
 
 /**
+ * The loaded screen: the controls, then the rows they leave.
+ *
+ * The controls are hidden on a ledger with nothing in it, because there is nothing for them to act
+ * on and three filters over a blank page invite the household to look for a problem that does not
+ * exist. They stay put when a filter excludes every row, because there the message below them is
+ * *about* them.
+ */
+@Composable
+private fun ContentBody(
+    state: TransactionsUiState.Content,
+    onQueryChange: (String) -> Unit,
+    onTypeFilterChange: (TransactionTypeFilter) -> Unit,
+    onMonthChange: (YearMonth) -> Unit,
+    onClearFilters: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxSize()) {
+        if (!state.ledgerIsEmpty) {
+            TransactionsFilterBar(
+                filters = state.filters,
+                monthOptions = state.monthOptions,
+                onQueryChange = onQueryChange,
+                onTypeFilterChange = onTypeFilterChange,
+                onMonthChange = onMonthChange,
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+        ) {
+            when {
+                state.ledgerIsEmpty -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // Loaded successfully and there is nothing to show: a success, and a
+                    // different thing from a failed read.
+                    StatusMessage(
+                        icon = Icons.AutoMirrored.Outlined.List,
+                        title = stringResource(R.string.transactions_empty_title),
+                        message = stringResource(R.string.transactions_empty_message),
+                    )
+                }
+
+                state.groups.isEmpty() -> Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    // A loaded ledger whose rows were all filtered out. Also a success - and the
+                    // one empty screen that has to explain itself, because the household is looking
+                    // at a blank page that their own search produced.
+                    StatusMessage(
+                        icon = Icons.Filled.Search,
+                        title = stringResource(R.string.transactions_no_matches_title),
+                        message = stringResource(R.string.transactions_no_matches_message),
+                        accentColor = MaterialTheme.colorScheme.surfaceVariant,
+                        accentContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        action = {
+                            TextButton(onClick = onClearFilters) {
+                                Text(text = stringResource(R.string.transactions_clear_filters))
+                            }
+                        },
+                    )
+                }
+
+                else -> TransactionList(
+                    groups = state.groups,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    }
+}
+
+/** The search box and the three chips that decide what the list below shows. */
+@Composable
+private fun TransactionsFilterBar(
+    filters: TransactionFilters,
+    monthOptions: List<YearMonth>,
+    onQueryChange: (String) -> Unit,
+    onTypeFilterChange: (TransactionTypeFilter) -> Unit,
+    onMonthChange: (YearMonth) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        SearchField(
+            query = filters.query,
+            onQueryChange = onQueryChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp),
+        )
+
+        FilterBar(
+            filters = filters,
+            monthOptions = monthOptions,
+            onTypeFilterChange = onTypeFilterChange,
+            onMonthChange = onMonthChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp),
+        )
+    }
+}
+
+/**
+ * The search box.
+ *
+ * A filled `TextField` rather than an outlined one: the field is a filter over the list, not a form
+ * to be completed, and removing the box around it keeps it from competing with the rows for
+ * attention. The clear button appears only when there is something to clear, so the trailing space
+ * is not spent on a control that would do nothing.
+ */
+@Composable
+private fun SearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    TextField(
+        value = query,
+        onValueChange = onQueryChange,
+        modifier = modifier,
+        placeholder = { Text(text = stringResource(R.string.transactions_search_placeholder)) },
+        leadingIcon = {
+            Icon(imageVector = Icons.Filled.Search, contentDescription = null)
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.transactions_search_clear),
+                    )
+                }
+            }
+        },
+        singleLine = true,
+        shape = MaterialTheme.shapes.large,
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            focusedIndicatorColor = Color.Transparent,
+            unfocusedIndicatorColor = Color.Transparent,
+        ),
+    )
+}
+
+/**
+ * The direction chips and the month selector, in one row that scrolls sideways.
+ *
+ * Scrolling rather than wrapping: at three chips plus a month label the row already overflows a
+ * small phone in a large font, and a second line of filters that appears and disappears would move
+ * the list every time the household changed device settings.
+ */
+@Composable
+private fun FilterBar(
+    filters: TransactionFilters,
+    monthOptions: List<YearMonth>,
+    onTypeFilterChange: (TransactionTypeFilter) -> Unit,
+    onMonthChange: (YearMonth) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .padding(horizontal = 16.dp)
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TypeFilterChip(
+            label = stringResource(R.string.transactions_filter_all),
+            filter = TransactionTypeFilter.ALL,
+            selected = filters.type,
+            onTypeFilterChange = onTypeFilterChange,
+        )
+        TypeFilterChip(
+            label = stringResource(R.string.transactions_filter_income),
+            filter = TransactionTypeFilter.INCOME,
+            selected = filters.type,
+            onTypeFilterChange = onTypeFilterChange,
+        )
+        TypeFilterChip(
+            label = stringResource(R.string.transactions_filter_expense),
+            filter = TransactionTypeFilter.EXPENSE,
+            selected = filters.type,
+            onTypeFilterChange = onTypeFilterChange,
+        )
+        MonthFilterChip(
+            month = filters.month,
+            monthOptions = monthOptions,
+            onMonthChange = onMonthChange,
+        )
+    }
+}
+
+@Composable
+private fun TypeFilterChip(
+    label: String,
+    filter: TransactionTypeFilter,
+    selected: TransactionTypeFilter,
+    onTypeFilterChange: (TransactionTypeFilter) -> Unit,
+) {
+    FilterChip(
+        selected = filter == selected,
+        onClick = { onTypeFilterChange(filter) },
+        label = { Text(text = label) },
+    )
+}
+
+/**
+ * The month the list is scoped to.
+ *
+ * The chip is never in the *selected* style: it is not a toggle but a value, and the value is
+ * already written on it. It is drawn filled rather than outlined so it reads as a control that
+ * belongs to the same group as the chips beside it, and the menu lists only months that have
+ * entries - offering an empty month would be offering the household a blank page.
+ */
+@Composable
+private fun MonthFilterChip(
+    month: YearMonth,
+    monthOptions: List<YearMonth>,
+    onMonthChange: (YearMonth) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box {
+        FilterChip(
+            selected = false,
+            onClick = { expanded = true },
+            label = { Text(text = DateFormatter.formatMonth(month)) },
+            trailingIcon = {
+                Icon(
+                    imageVector = Icons.Filled.ArrowDropDown,
+                    contentDescription = stringResource(R.string.transactions_filter_month_description),
+                )
+            },
+            colors = FilterChipDefaults.filterChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                labelColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        )
+
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            monthOptions.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(text = DateFormatter.formatMonth(option)) },
+                    onClick = {
+                        expanded = false
+                        onMonthChange(option)
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The rows, newest day first.
+ *
+ * Each day is a heading followed by its own rows, all in one `LazyColumn` so a long ledger is
+ * still virtualised - only the days on screen are composed. Rows are keyed by their own id and
+ * headings by their date, so a change to one entry animates that row instead of every row below it
+ * being treated as new.
+ */
+@Composable
+private fun TransactionList(
+    groups: List<TransactionDateGroup>,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+    ) {
+        groups.forEach { group ->
+            item(key = "heading-${group.date}") {
+                DateHeading(group = group)
+            }
+            items(items = group.items, key = { it.id }) { item ->
+                TransactionRow(item = item)
+            }
+        }
+    }
+}
+
+/** The day a run of rows belongs to, qualified as today or yesterday when it is one of them. */
+@Composable
+private fun DateHeading(
+    group: TransactionDateGroup,
+    modifier: Modifier = Modifier,
+) {
+    val date = DateFormatter.format(group.date)
+    val label = when (group.relation) {
+        DateRelation.TODAY -> stringResource(
+            R.string.transactions_date_with_relation,
+            date,
+            stringResource(R.string.transactions_date_today),
+        )
+
+        DateRelation.YESTERDAY -> stringResource(
+            R.string.transactions_date_with_relation,
+            date,
+            stringResource(R.string.transactions_date_yesterday),
+        )
+
+        DateRelation.EARLIER -> date
+    }
+
+    Text(
+        text = label,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp, bottom = 4.dp),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/**
+ * One ledger entry.
+ *
+ * The mark is a circle holding the glyph for the category, and the text block takes the leftover
+ * width (`weight(1f)`) while the amount keeps its intrinsic width - so a long category name or
+ * description is ellipsised instead of pushing the amount off the row or wrapping it onto a second
+ * line where it would read as a different number.
+ */
+@Composable
+private fun TransactionRow(
+    item: TransactionListItem,
+    modifier: Modifier = Modifier,
+) {
+    val description = item.description
+    val kind = categoryIconKindFor(categoryName = item.categoryName, type = item.type)
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = kind.containerColor(),
+            contentColor = kind.onContainerColor(),
+            modifier = Modifier.size(44.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = kind.imageVector,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = item.categoryName,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (description != null) {
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Text(
+            text = item.amountText(),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = amountColorFor(item.type),
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+/**
  * Centred icon, headline and supporting sentence, with an optional action underneath.
  *
- * Shared by the empty and error states so the two can never drift apart visually; only the accent
- * colours differ, because an error must not be dressed in the same reassuring green as an empty
- * ledger.
+ * Shared by the empty, error and no-matches states so they can never drift apart visually; only the
+ * accent colours differ, because a failed read must not be dressed in the same reassuring green as
+ * an empty ledger.
  */
 @Composable
 private fun StatusMessage(
@@ -209,92 +623,8 @@ private fun StatusMessage(
             textAlign = TextAlign.Center,
         )
         if (action != null) {
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             action()
-        }
-    }
-}
-
-@Composable
-private fun TransactionList(
-    items: List<TransactionListItem>,
-    modifier: Modifier = Modifier,
-) {
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        // Keyed by the row's own id: stable keys mean a change to one entry animates that row
-        // instead of every row below it being treated as new.
-        items(items = items, key = { it.id }) { item ->
-            TransactionRow(item = item)
-        }
-    }
-}
-
-/**
- * One ledger entry.
- *
- * The text block takes the leftover width (`weight(1f)`) while the amount keeps its intrinsic
- * width, so a long category name or description is ellipsised instead of pushing the amount off
- * the edge or overflowing the card.
- */
-@Composable
-private fun TransactionRow(
-    item: TransactionListItem,
-    modifier: Modifier = Modifier,
-) {
-    val description = item.description
-
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Text(
-                    text = item.categoryName,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (description != null) {
-                    Text(
-                        text = description,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Text(
-                    text = DateFormatter.format(item.transactionDate),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = item.signedAmountText(),
-                style = MaterialTheme.typography.titleMedium,
-                color = amountColorFor(item.type),
-                maxLines = 1,
-                softWrap = false,
-            )
         }
     }
 }
@@ -309,32 +639,65 @@ private fun amountColorFor(type: TransactionType): Color = when (type) {
     TransactionType.EXPENSE -> MaterialTheme.colorScheme.error
 }
 
+private val PREVIEW_TODAY: LocalDate = LocalDate.of(2026, 10, 17)
+
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun TransactionsContentPreview() {
     HomeFinanceTheme {
         TransactionsContent(
             uiState = TransactionsUiState.Content(
-                items = listOf(
-                    TransactionListItem(
-                        id = 1L,
-                        categoryName = "Salary",
-                        description = null,
-                        transactionDate = LocalDate.of(2026, 10, 1),
-                        amountPaise = 4_850_000L,
-                        type = TransactionType.INCOME,
+                groups = listOf(
+                    TransactionDateGroup(
+                        date = PREVIEW_TODAY,
+                        relation = DateRelation.TODAY,
+                        items = listOf(
+                            TransactionListItem(
+                                id = 1L,
+                                categoryName = "Milk",
+                                description = "1.5 litres",
+                                transactionDate = PREVIEW_TODAY,
+                                amountPaise = 9_000L,
+                                type = TransactionType.EXPENSE,
+                            ),
+                            TransactionListItem(
+                                id = 2L,
+                                categoryName = "Groceries",
+                                description = "Vegetables and fruits",
+                                transactionDate = PREVIEW_TODAY,
+                                amountPaise = 32_000L,
+                                type = TransactionType.EXPENSE,
+                            ),
+                        ),
                     ),
-                    TransactionListItem(
-                        id = 2L,
-                        categoryName = "Groceries",
-                        description = "Weekly shop at the market",
-                        transactionDate = LocalDate.of(2026, 10, 3),
-                        amountPaise = 273_405L,
-                        type = TransactionType.EXPENSE,
+                    TransactionDateGroup(
+                        date = PREVIEW_TODAY.minusDays(2),
+                        relation = DateRelation.EARLIER,
+                        items = listOf(
+                            TransactionListItem(
+                                id = 3L,
+                                categoryName = "Electricity bill",
+                                description = "Online payment",
+                                transactionDate = PREVIEW_TODAY.minusDays(2),
+                                amountPaise = 180_000L,
+                                type = TransactionType.EXPENSE,
+                            ),
+                        ),
                     ),
                 ),
+                filters = TransactionFilters(
+                    query = "",
+                    type = TransactionTypeFilter.ALL,
+                    month = YearMonth.of(2026, 10),
+                ),
+                monthOptions = listOf(YearMonth.of(2026, 10), YearMonth.of(2026, 9)),
+                ledgerIsEmpty = false,
             ),
             onRetry = {},
+            onQueryChange = {},
+            onTypeFilterChange = {},
+            onMonthChange = {},
+            onClearFilters = {},
             onAddTransaction = {},
         )
     }

@@ -70,6 +70,34 @@ val MIGRATION_1_2: Migration = object : Migration(1, 2) {
 }
 
 /**
+ * Version 2 -> 3: notes, and the quantity and rate a milk-like entry is recorded by.
+ *
+ * The add form asks for a description *and* notes, and offers a switch that records what was bought
+ * and at what price. Neither existed in version 2, so this adds three **nullable** columns.
+ *
+ * `ALTER TABLE ... ADD COLUMN` is chosen over the table-rebuild recipe on purpose: SQLite documents
+ * it as an O(1) metadata change that rewrites nothing, and every existing row keeps its values and
+ * takes `NULL` in the three new columns. A rebuild (`CREATE TABLE`/`INSERT SELECT`/`DROP TABLE`/
+ * `RENAME`) would copy the household's whole ledger to disk for no gain and would be the one place a
+ * migration could actually lose a row. No row is written or updated here either: an entry that had no
+ * quantity before must not be given a made-up one.
+ *
+ * The statements deliberately mirror, character for character, the SQL Room generates for the
+ * version-3 entity, and `HomeFinanceDatabaseMigrationTest` validates the result against the exported
+ * `3.json` on a device.
+ */
+val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // No DEFAULT: a nullable column with no declared default matches the entity, where all three
+        // fields default to null in Kotlin rather than in SQL.
+        db.execSQL("ALTER TABLE `transactions` ADD COLUMN `notes` TEXT")
+        db.execSQL("ALTER TABLE `transactions` ADD COLUMN `quantity_thousandths` INTEGER")
+        db.execSQL("ALTER TABLE `transactions` ADD COLUMN `rate_paise` INTEGER")
+    }
+}
+
+/**
  * Every schema migration the app knows about, oldest first.
  *
  * [com.homefinance.app.data.local.HomeFinanceDatabase.build] registers this whole array, so adding
@@ -80,4 +108,4 @@ val MIGRATION_1_2: Migration = object : Migration(1, 2) {
  * holds a household's ledger, and the alternative to writing a migration is asking the user to
  * lose it.
  */
-val HOME_FINANCE_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2)
+val HOME_FINANCE_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)

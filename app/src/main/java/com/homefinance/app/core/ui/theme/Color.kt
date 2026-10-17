@@ -20,6 +20,11 @@ val OnTertiary = Color(0xFFFFFFFF)
 val TertiaryContainer = Color(0xFFC1E8FB)
 val OnTertiaryContainer = Color(0xFF001F29)
 
+// Utility bills: the warm amber a household associates with an electricity bill, kept apart from
+// the red that means an error so a bill never reads as a warning.
+val UtilityContainer = Color(0xFFFDE3BE)
+val OnUtilityContainer = Color(0xFF5B3D00)
+
 // Error: the red used for expense indicators.
 val ErrorRed = Color(0xFFBA1A1A)
 val OnErrorRed = Color(0xFFFFFFFF)

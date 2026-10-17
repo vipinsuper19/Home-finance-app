@@ -9,6 +9,7 @@ import com.homefinance.app.data.repository.TransactionRepository
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -20,6 +21,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -29,8 +31,9 @@ import org.junit.Test
  *
  * These run on the JVM in milliseconds and are fully deterministic: `Dispatchers.Main` - which
  * `viewModelScope` uses and which does not exist off-device - is replaced with a test dispatcher,
- * and the state is never read until the work has been advanced to completion. Nothing here needs
- * a device, a database file, or the passage of real time.
+ * the day the screen believes it is is pinned through the constructor, and the state is never read
+ * until the work has been advanced to completion. Nothing here needs a device, a database file, or
+ * the passage of real time.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class TransactionsViewModelTest {
@@ -75,7 +78,8 @@ class TransactionsViewModelTest {
 
         // An empty ledger is a successful read of nothing. Reporting it as an error would tell a
         // household their data is broken on the day they install the app.
-        assertEquals(TransactionsUiState.Content(emptyList()), viewModel.uiState.value)
+        assertTrue(viewModel.content().ledgerIsEmpty)
+        assertTrue(viewModel.content().groups.isEmpty())
     }
 
     // ---------------------------------------------------------------- content
@@ -84,7 +88,7 @@ class TransactionsViewModelTest {
     fun storedTransactionsAreExposedNewestFirst() = runTest {
         val viewModel = viewModelWith(
             transactions = listOf(
-                transactionRow(id = 1L, categoryId = 1L, transactionDate = LocalDate.of(2026, 9, 1)),
+                transactionRow(id = 1L, categoryId = 1L, transactionDate = LocalDate.of(2026, 10, 1)),
                 transactionRow(id = 2L, categoryId = 1L, transactionDate = LocalDate.of(2026, 10, 15)),
                 transactionRow(id = 3L, categoryId = 1L, transactionDate = LocalDate.of(2026, 10, 15)),
             ),
@@ -93,9 +97,7 @@ class TransactionsViewModelTest {
         collectUiState(viewModel)
         advanceUntilIdle()
 
-        val items = viewModel.content().items
-
-        assertEquals(listOf(3L, 2L, 1L), items.map { it.id })
+        assertEquals(listOf(3L, 2L, 1L), viewModel.content().visibleItems.map { it.id })
     }
 
     @Test
@@ -111,12 +113,29 @@ class TransactionsViewModelTest {
         advanceUntilIdle()
 
         // Newest first, so the 15 October row leads; each row kept its own category's name.
-        assertEquals(listOf("Salary", "Groceries"), viewModel.content().items.map { it.categoryName })
+        assertEquals(listOf("Salary", "Groceries"), viewModel.content().visibleItems.map { it.categoryName })
+    }
+
+    @Test
+    fun rowsAreSplitUnderADayHeadingAndTheNewestDayLeads() = runTest {
+        val viewModel = viewModelWith(
+            transactions = listOf(
+                transactionRow(id = 2L, categoryId = 1L, transactionDate = TODAY),
+                transactionRow(id = 1L, categoryId = 1L, transactionDate = TODAY.minusDays(1)),
+            ),
+            categoryNames = mapOf(1L to "Groceries"),
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        val groups = viewModel.content().groups
+
+        assertEquals(listOf(TODAY, TODAY.minusDays(1)), groups.map { it.date })
+        assertEquals(listOf(DateRelation.TODAY, DateRelation.YESTERDAY), groups.map { it.relation })
     }
 
     @Test
     fun aRowCarriesEverythingTheScreenDraws() = runTest {
-        val date = LocalDate.of(2026, 10, 15)
         val viewModel = viewModelWith(
             transactions = listOf(
                 transactionRow(
@@ -125,7 +144,7 @@ class TransactionsViewModelTest {
                     type = TransactionType.EXPENSE,
                     amountPaise = 273_405L,
                     description = "Weekly shop",
-                    transactionDate = date,
+                    transactionDate = TODAY,
                 ),
             ),
             categoryNames = mapOf(1L to "Groceries"),
@@ -138,11 +157,11 @@ class TransactionsViewModelTest {
                 id = 7L,
                 categoryName = "Groceries",
                 description = "Weekly shop",
-                transactionDate = date,
+                transactionDate = TODAY,
                 amountPaise = 273_405L,
                 type = TransactionType.EXPENSE,
             ),
-            viewModel.content().items.single(),
+            viewModel.content().visibleItems.single(),
         )
     }
 
@@ -154,13 +173,13 @@ class TransactionsViewModelTest {
                     id = 1L,
                     categoryId = 10L,
                     type = TransactionType.INCOME,
-                    transactionDate = LocalDate.of(2026, 10, 1),
+                    transactionDate = TODAY.minusDays(14),
                 ),
                 transactionRow(
                     id = 2L,
                     categoryId = 20L,
                     type = TransactionType.EXPENSE,
-                    transactionDate = LocalDate.of(2026, 10, 15),
+                    transactionDate = TODAY,
                 ),
             ),
             categoryNames = mapOf(10L to "Salary", 20L to "Groceries"),
@@ -170,7 +189,7 @@ class TransactionsViewModelTest {
 
         assertEquals(
             listOf(TransactionType.EXPENSE, TransactionType.INCOME),
-            viewModel.content().items.map { it.type },
+            viewModel.content().visibleItems.map { it.type },
         )
     }
 
@@ -189,7 +208,170 @@ class TransactionsViewModelTest {
         collectUiState(viewModel)
         advanceUntilIdle()
 
-        assertEquals(beyondDoublePrecision, viewModel.content().items.single().amountPaise)
+        assertEquals(beyondDoublePrecision, viewModel.content().visibleItems.single().amountPaise)
+    }
+
+    // ------------------------------------------------------------------ filters
+
+    @Test
+    fun theScreenOpensOnTheCurrentMonthWhileItHasEntries() = runTest {
+        val viewModel = viewModelWith(
+            transactions = listOf(
+                transactionRow(id = 2L, categoryId = 1L, transactionDate = TODAY),
+                transactionRow(id = 1L, categoryId = 1L, transactionDate = TODAY.minusMonths(1)),
+            ),
+            categoryNames = mapOf(1L to "Groceries"),
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        assertEquals(YearMonth.from(TODAY), viewModel.content().filters.month)
+        assertEquals(listOf(2L), viewModel.content().visibleItems.map { it.id })
+    }
+
+    @Test
+    fun theScreenOpensOnTheNewestMonthWithEntriesWhenTheCurrentMonthIsEmpty() = runTest {
+        val viewModel = viewModelWith(
+            transactions = listOf(transactionRow(id = 1L, categoryId = 1L, transactionDate = TODAY.minusMonths(1))),
+            categoryNames = mapOf(1L to "Groceries"),
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        // Not an October heading over a September ledger.
+        assertEquals(YearMonth.from(TODAY.minusMonths(1)), viewModel.content().filters.month)
+        assertEquals(listOf(1L), viewModel.content().visibleItems.map { it.id })
+    }
+
+    @Test
+    fun choosingAMonthShowsThatMonth() = runTest {
+        val viewModel = viewModelWith(
+            transactions = listOf(
+                transactionRow(id = 2L, categoryId = 1L, transactionDate = TODAY),
+                transactionRow(id = 1L, categoryId = 1L, transactionDate = TODAY.minusMonths(1)),
+            ),
+            categoryNames = mapOf(1L to "Groceries"),
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onMonthChange(YearMonth.from(TODAY.minusMonths(1)))
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L), viewModel.content().visibleItems.map { it.id })
+    }
+
+    @Test
+    fun choosingADirectionChipShowsOnlyThatDirection() = runTest {
+        val viewModel = viewModelWith(
+            transactions = listOf(
+                transactionRow(id = 2L, categoryId = 20L, type = TransactionType.EXPENSE),
+                transactionRow(id = 1L, categoryId = 10L, type = TransactionType.INCOME),
+            ),
+            categoryNames = mapOf(10L to "Salary", 20L to "Groceries"),
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onTypeFilterChange(TransactionTypeFilter.INCOME)
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L), viewModel.content().visibleItems.map { it.id })
+    }
+
+    @Test
+    fun typingInTheSearchBoxNarrowsTheRowsAsItIsTyped() = runTest {
+        val viewModel = viewModelWith(
+            transactions = listOf(
+                transactionRow(id = 2L, categoryId = 20L, description = "Chai and biscuits"),
+                transactionRow(id = 1L, categoryId = 10L, type = TransactionType.INCOME),
+            ),
+            categoryNames = mapOf(10L to "Salary", 20L to "Groceries"),
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onQueryChange("chai")
+        advanceUntilIdle()
+
+        assertEquals(listOf(2L), viewModel.content().visibleItems.map { it.id })
+    }
+
+    @Test
+    fun theSearchTextIsEchoedBackSoTheFieldCanShowWhatWasTyped() = runTest {
+        val viewModel = viewModelWith(
+            transactions = listOf(transactionRow(id = 1L, categoryId = 1L)),
+            categoryNames = mapOf(1L to "Groceries"),
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onQueryChange("  groc  ")
+        advanceUntilIdle()
+
+        // Untrimmed, so the caret does not jump as the household types a space.
+        assertEquals("  groc  ", viewModel.content().filters.query)
+    }
+
+    @Test
+    fun filteringReusesTheRowsAlreadyReadRatherThanAskingTheDatabaseAgain() = runTest {
+        val dao = FakeTransactionDao(mapOf(1L to "Groceries"), listOf(transactionRow(id = 1L, categoryId = 1L)))
+        val viewModel = viewModelOver(dao)
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        // The ledger becomes unreadable. If filtering went back to the database, this failure would
+        // replace rows that are already in memory - which is exactly what must not happen while a
+        // household is typing into a search box.
+        dao.failure = IOException("the database is no longer readable")
+        viewModel.onQueryChange("groc")
+        advanceUntilIdle()
+
+        assertEquals(listOf(1L), viewModel.content().visibleItems.map { it.id })
+    }
+
+    @Test
+    fun aFilterThatMatchesNothingIsNotAnEmptyLedger() = runTest {
+        val viewModel = viewModelWith(
+            transactions = listOf(transactionRow(id = 1L, categoryId = 1L)),
+            categoryNames = mapOf(1L to "Groceries"),
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onQueryChange("nothing matches this")
+        advanceUntilIdle()
+
+        val state = viewModel.content()
+        assertTrue(state.groups.isEmpty())
+        assertFalse(state.ledgerIsEmpty)
+    }
+
+    @Test
+    fun clearingTheFiltersPutsEveryControlBack() = runTest {
+        val viewModel = viewModelWith(
+            transactions = listOf(
+                transactionRow(id = 2L, categoryId = 20L, type = TransactionType.EXPENSE, transactionDate = TODAY),
+                transactionRow(id = 1L, categoryId = 10L, type = TransactionType.INCOME, transactionDate = TODAY.minusMonths(1)),
+            ),
+            categoryNames = mapOf(10L to "Salary", 20L to "Groceries"),
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onQueryChange("salary")
+        viewModel.onTypeFilterChange(TransactionTypeFilter.INCOME)
+        viewModel.onMonthChange(YearMonth.from(TODAY.minusMonths(1)))
+        advanceUntilIdle()
+
+        viewModel.clearFilters()
+        advanceUntilIdle()
+
+        val state = viewModel.content()
+        assertEquals(TransactionFilters(query = "", type = TransactionTypeFilter.ALL, month = YearMonth.from(TODAY)), state.filters)
+        // The month follows the ledger again rather than staying pinned to whichever month was on
+        // screen when the household gave up on their filters.
+        assertEquals(listOf(2L), state.visibleItems.map { it.id })
     }
 
     // ------------------------------------------------------------------ error
@@ -241,7 +423,7 @@ class TransactionsViewModelTest {
         viewModel.retry()
         advanceUntilIdle()
 
-        assertEquals(listOf(1L), viewModel.content().items.map { it.id })
+        assertEquals(listOf(1L), viewModel.content().visibleItems.map { it.id })
     }
 
     @Test
@@ -254,6 +436,23 @@ class TransactionsViewModelTest {
         advanceUntilIdle()
 
         viewModel.retry()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value is TransactionsUiState.Error)
+    }
+
+    @Test
+    fun aFilterAppliedWhileTheReadIsBrokenDoesNotMaskTheFailure() = runTest {
+        // Filters are not a way out of a broken read: a ledger that failed to load must still say
+        // so, rather than showing an empty list that looks like a successful search.
+        val dao = FakeTransactionDao(mapOf(1L to "Groceries"), listOf(transactionRow(id = 1L, categoryId = 1L)))
+        dao.failure = IOException("the database could not be read")
+        val viewModel = viewModelOver(dao)
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onQueryChange("groc")
         advanceUntilIdle()
 
         assertTrue(viewModel.uiState.value is TransactionsUiState.Error)
@@ -281,7 +480,7 @@ class TransactionsViewModelTest {
 
     /** Wraps [dao] in the real repository, exactly as the application class wires it up. */
     private fun viewModelOver(dao: FakeTransactionDao): TransactionsViewModel =
-        TransactionsViewModel(TransactionRepository(dao, FakeCategoryDao()))
+        TransactionsViewModel(TransactionRepository(dao, FakeCategoryDao()), today = TODAY)
             .also { viewModelStore.put("transactions", it) }
 
     private fun transactionRow(
@@ -290,7 +489,7 @@ class TransactionsViewModelTest {
         type: TransactionType = TransactionType.EXPENSE,
         amountPaise: Long = 12_345L,
         description: String? = null,
-        transactionDate: LocalDate = LocalDate.of(2026, 10, 15),
+        transactionDate: LocalDate = TODAY,
     ): TransactionEntity = TransactionEntity(
         id = id,
         type = type,
@@ -304,5 +503,8 @@ class TransactionsViewModelTest {
 
     private companion object {
         val AUDIT_INSTANT: Instant = Instant.parse("2026-10-16T06:30:00Z")
+
+        /** The day the screen believes it is, pinned so the headings never depend on the clock. */
+        val TODAY: LocalDate = LocalDate.of(2026, 10, 17)
     }
 }

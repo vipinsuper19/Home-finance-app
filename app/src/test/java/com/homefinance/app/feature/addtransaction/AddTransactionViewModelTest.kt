@@ -2,6 +2,7 @@ package com.homefinance.app.feature.addtransaction
 
 import androidx.lifecycle.ViewModelStore
 import com.homefinance.app.core.util.MoneyParseResult
+import com.homefinance.app.core.util.QuantityParseResult
 import com.homefinance.app.data.local.dao.CategoryDao
 import com.homefinance.app.data.local.dao.TransactionDao
 import com.homefinance.app.data.local.entity.CategoryEntity
@@ -68,9 +69,16 @@ class AddTransactionViewModelTest {
         assertEquals(TransactionType.EXPENSE, state.type)
         assertEquals(TODAY, state.date)
         assertEquals("", state.amountInput)
-        assertNull(state.categoryId)
+        assertNull(state.category)
         assertNull(state.amountError)
         assertNull(state.savedTransactionId)
+        // The optional parts of the entry start empty and off, not with a placeholder value.
+        assertEquals("", state.description)
+        assertEquals("", state.notes)
+        assertEquals(false, state.useQuantityAndRate)
+        assertEquals("", state.quantityInput)
+        assertEquals("", state.rateInput)
+        assertNull(state.derivedAmountPaise)
     }
 
     @Test
@@ -127,7 +135,7 @@ class AddTransactionViewModelTest {
 
         assertEquals(listOf("Salary"), options(viewModel).map { it.name })
         // An expense category can never be silently carried over to an income entry.
-        assertNull(viewModel.uiState.value.categoryId)
+        assertNull(viewModel.uiState.value.category)
     }
 
     @Test
@@ -383,7 +391,9 @@ class AddTransactionViewModelTest {
         assertNull(state.categoryDialog)
         assertEquals("Milk", categoryDao.inserted.single().name)
         assertEquals(TransactionType.EXPENSE, categoryDao.inserted.single().type)
-        assertEquals(1L, state.categoryId)
+        // The selection carries the name with it, so the form can show what it chose without
+        // waiting for the category list to come back round from the database.
+        assertEquals(CategoryOption(id = 1L, name = "Milk"), state.category)
     }
 
     @Test
@@ -432,6 +442,368 @@ class AddTransactionViewModelTest {
         viewModel.onCategoryNameChange("Milk")
 
         assertNull(viewModel.uiState.value.categoryDialog?.error)
+    }
+
+    @Test
+    fun aCategoryThatIsNotOfferedCannotBeSelected() = runTest {
+        val viewModel = viewModelWith()
+        advanceUntilIdle()
+
+        // Id 99 is not in the list the picker showed. Storing it would put "nothing chosen" on
+        // screen while the save filed the money under something the household never saw.
+        viewModel.onCategorySelected(99L)
+
+        assertNull(viewModel.uiState.value.category)
+    }
+
+    // ------------------------------------------------------------------- notes
+
+    @Test
+    fun notesAreStoredSeparatelyFromTheDescription() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Groceries", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        viewModel.onAmountChange("250")
+        viewModel.onCategorySelected(1L)
+        viewModel.onDescriptionChange("Weekly shop")
+        viewModel.onNotesChange("  Bought at the Sunday market  ")
+        viewModel.save()
+        advanceUntilIdle()
+
+        val stored = transactions.inserted.single()
+        // Description stays the one-line summary the ledger row shows; notes are their own field.
+        assertEquals("Weekly shop", stored.description)
+        assertEquals("Bought at the Sunday market", stored.notes)
+    }
+
+    @Test
+    fun anEmptyNotesFieldIsStoredAsNothingRatherThanAsSpaces() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Groceries", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        viewModel.onAmountChange("250")
+        viewModel.onCategorySelected(1L)
+        viewModel.onNotesChange("   ")
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertNull(transactions.inserted.single().notes)
+    }
+
+    // ------------------------------------------------------ quantity and rate
+
+    @Test
+    fun theAmountIsDerivedFromTheQuantityAndRateWhileTheSwitchIsOn() = runTest {
+        val viewModel = viewModelWith()
+        advanceUntilIdle()
+
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("1.5")
+        viewModel.onRateChange("60")
+
+        // 1.5 litres at ₹60.00 a litre is ₹90.00, and it is shown before anything is saved.
+        assertEquals(9_000L, viewModel.uiState.value.derivedAmountPaise)
+    }
+
+    @Test
+    fun noAmountIsDerivedWhileTheSwitchIsOffOrAFieldIsIncomplete() = runTest {
+        val viewModel = viewModelWith()
+        advanceUntilIdle()
+
+        viewModel.onQuantityChange("1.5")
+        viewModel.onRateChange("60")
+        // The switch is off, so the typed amount - not the product - is what would be saved.
+        assertNull(viewModel.uiState.value.derivedAmountPaise)
+
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onRateChange("")
+        assertNull(viewModel.uiState.value.derivedAmountPaise)
+
+        viewModel.onRateChange("60")
+        viewModel.onQuantityChange("not a number")
+        assertNull(viewModel.uiState.value.derivedAmountPaise)
+    }
+
+    @Test
+    fun aQuantityAndRateEntryIsSavedWithTheDerivedAmountAndBothFigures() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Milk", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("1.5")
+        viewModel.onRateChange("60")
+        viewModel.onCategorySelected(1L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        val stored = transactions.inserted.single()
+        assertEquals(9_000L, stored.amountPaise)
+        assertEquals(1_500L, stored.quantityThousandths)
+        assertEquals(6_000L, stored.ratePaise)
+    }
+
+    @Test
+    fun aProductThatDoesNotLandOnAPaiseIsRoundedHalfUpWhenSaved() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Milk", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("0.333")
+        viewModel.onRateChange("59.99")
+        viewModel.onCategorySelected(1L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        // 0.333 x ₹59.99 is 1997.667 paise: the row stores 1998, and the repository accepts it
+        // because it derives the same figure from the same quantities.
+        assertEquals(1_998L, transactions.inserted.single().amountPaise)
+    }
+
+    @Test
+    fun aQuantityWithTooMuchPrecisionIsRefusedRatherThanRounded() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Milk", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("1.2345")
+        viewModel.onRateChange("60")
+        viewModel.onCategorySelected(1L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(
+            QuantityParseResult.Problem.TooManyDecimalPlaces,
+            viewModel.uiState.value.quantityError,
+        )
+        assertEquals(0, transactions.inserted.size)
+        assertNull(viewModel.uiState.value.savedTransactionId)
+    }
+
+    @Test
+    fun aMissingQuantityIsRefusedBeforeTheRateIsEvenLookedAt() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Milk", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("")
+        viewModel.onRateChange("60")
+        viewModel.onCategorySelected(1L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(QuantityParseResult.Problem.Blank, viewModel.uiState.value.quantityError)
+        // The rate was fine, so it does not get a complaint it did not earn.
+        assertNull(viewModel.uiState.value.rateError)
+        assertEquals(0, transactions.inserted.size)
+    }
+
+    @Test
+    fun aMissingRateIsRefused() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Milk", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("1.5")
+        viewModel.onRateChange("")
+        viewModel.onCategorySelected(1L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(MoneyParseResult.Problem.Blank, viewModel.uiState.value.rateError)
+        assertEquals(0, transactions.inserted.size)
+    }
+
+    @Test
+    fun aZeroRateIsRefused() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Milk", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("1.5")
+        viewModel.onRateChange("0")
+        viewModel.onCategorySelected(1L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(MoneyParseResult.Problem.NotPositive, viewModel.uiState.value.rateError)
+        assertEquals(0, transactions.inserted.size)
+    }
+
+    @Test
+    fun aProductTooLargeToBeMoneyIsRefusedOnTheAmountRatherThanWrapped() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Milk", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        // Both figures are individually valid - each fits the column it is stored in - but the two
+        // multiplied together are far larger than any amount a Long can hold. The complaint belongs
+        // on the amount, because neither field on its own is wrong.
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("9223372036854775")
+        viewModel.onRateChange("92233720368547758")
+        viewModel.onCategorySelected(1L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertNull(viewModel.uiState.value.quantityError)
+        assertNull(viewModel.uiState.value.rateError)
+        assertEquals(MoneyParseResult.Problem.TooLarge, viewModel.uiState.value.amountError)
+        assertEquals(0, transactions.inserted.size)
+        assertNull(viewModel.uiState.value.savedTransactionId)
+    }
+
+    @Test
+    fun aProductTooSmallToBeMoneyIsRefusedOnTheAmount() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Milk", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        // 0.001 units at ₹1.00 is 0.1 paise, which is not a recordable amount at all. Both figures
+        // are individually valid, so the complaint has to land on the amount.
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("0.001")
+        viewModel.onRateChange("1")
+        viewModel.onCategorySelected(1L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertEquals(MoneyParseResult.Problem.NotPositive, viewModel.uiState.value.amountError)
+        assertEquals(0, transactions.inserted.size)
+    }
+
+    @Test
+    fun switchingTheModeClearsTheComplaintAboutTheFieldThatStopsDecidingTheAmount() = runTest {
+        val viewModel = viewModelWith()
+        advanceUntilIdle()
+        viewModel.onAmountChange("0")
+        viewModel.save()
+        advanceUntilIdle()
+        assertEquals(MoneyParseResult.Problem.NotPositive, viewModel.uiState.value.amountError)
+
+        viewModel.onQuantityAndRateToggled(true)
+
+        assertNull(viewModel.uiState.value.amountError)
+        assertEquals(true, viewModel.uiState.value.useQuantityAndRate)
+    }
+
+    @Test
+    fun switchingTheModeKeepsWhatWasTypedInBothModes() = runTest {
+        val viewModel = viewModelWith()
+        advanceUntilIdle()
+        viewModel.onAmountChange("250")
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("1.5")
+        viewModel.onRateChange("60")
+
+        viewModel.onQuantityAndRateToggled(false)
+        assertEquals("250", viewModel.uiState.value.amountInput)
+
+        viewModel.onQuantityAndRateToggled(true)
+        assertEquals("1.5", viewModel.uiState.value.quantityInput)
+        assertEquals("60", viewModel.uiState.value.rateInput)
+    }
+
+    @Test
+    fun editingAQuantityClearsThePreviousComplaint() = runTest {
+        val viewModel = viewModelWith()
+        advanceUntilIdle()
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.save()
+        advanceUntilIdle()
+        assertEquals(QuantityParseResult.Problem.Blank, viewModel.uiState.value.quantityError)
+
+        viewModel.onQuantityChange("1.5")
+
+        assertNull(viewModel.uiState.value.quantityError)
+    }
+
+    @Test
+    fun editingARateClearsThePreviousComplaint() = runTest {
+        val viewModel = viewModelWith()
+        advanceUntilIdle()
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.save()
+        advanceUntilIdle()
+
+        viewModel.onRateChange("60")
+
+        assertNull(viewModel.uiState.value.rateError)
+    }
+
+    @Test
+    fun aProductTooLargeToBeMoneyIsRefusedRatherThanWrapped() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(
+            categoryDao = FakeCategoryDao(listOf(category(1L, "Milk", TransactionType.EXPENSE))),
+            transactionDao = transactions,
+        )
+        advanceUntilIdle()
+
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("9999999999999999")
+        viewModel.onRateChange("999999999999")
+        viewModel.onCategorySelected(1L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        // The quantity itself does not fit the thousandths column, so it is that field that is
+        // refused - and nothing was written either way.
+        assertEquals(QuantityParseResult.Problem.TooLarge, viewModel.uiState.value.quantityError)
+        assertEquals(0, transactions.inserted.size)
+    }
+
+    @Test
+    fun aQuantityEntryWithNoCategoryIsStillRefused() = runTest {
+        val transactions = FakeTransactionDao()
+        val viewModel = viewModelWith(transactionDao = transactions)
+        advanceUntilIdle()
+
+        viewModel.onQuantityAndRateToggled(true)
+        viewModel.onQuantityChange("1.5")
+        viewModel.onRateChange("60")
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showCategoryError)
+        assertEquals(0, transactions.inserted.size)
     }
 
     // ---------------------------------------------------------------- fixtures

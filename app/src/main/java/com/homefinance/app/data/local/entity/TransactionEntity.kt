@@ -25,6 +25,20 @@ import java.time.LocalDate
  * every insert and update (see its KDoc for why a hand-written `CHECK` in a migration was
  * rejected).
  *
+ * ### Quantity and rate
+ *
+ * An entry may additionally record *how much* was bought and *at what price*, which is how a
+ * household actually remembers a milk bill. [quantityThousandths] is a whole number of thousandths of
+ * a unit (1.5 litres is `1500`) and [ratePaise] is money per unit, so neither is ever a `Float` or a
+ * `Double` either.
+ *
+ * Those two columns are **null together or set together**: a quantity without a rate says nothing
+ * about the money. When they are set, [amountPaise] is exactly
+ * `quantityThousandths x ratePaise / 1000` rounded half-up - the same function the form previews with
+ * - and [com.homefinance.app.data.repository.TransactionRepository] refuses a row whose three figures
+ * disagree. The amount stays the single figure the ledger is summed from, so how an entry was
+ * *entered* never changes what it is *worth*.
+ *
  * ### Dates and times
  *
  * - [transactionDate] is the day the money moved, as the household sees it: a plain calendar date
@@ -39,6 +53,12 @@ import java.time.LocalDate
  * @param amountPaise positive amount in paise. Always positive - see above.
  * @param categoryId the category this entry is filed under.
  * @param description optional free text, for example "August milk".
+ * @param notes optional longer free text, kept separate from [description] so the one-line summary a
+ *   ledger row shows is never the whole of what the household wrote.
+ * @param quantityThousandths how many thousandths of a unit were bought, or `null` when the entry was
+ *   recorded as a plain amount. Set together with [ratePaise].
+ * @param ratePaise the price of one unit in paise, or `null` when the entry was recorded as a plain
+ *   amount. Set together with [quantityThousandths].
  * @param transactionDate the calendar day the money moved.
  * @param createdAt when the row was first written.
  * @param updatedAt when the row was last edited.
@@ -80,6 +100,15 @@ data class TransactionEntity(
 
     @ColumnInfo(name = "description")
     val description: String? = null,
+
+    @ColumnInfo(name = "notes")
+    val notes: String? = null,
+
+    @ColumnInfo(name = "quantity_thousandths")
+    val quantityThousandths: Long? = null,
+
+    @ColumnInfo(name = "rate_paise")
+    val ratePaise: Long? = null,
 
     @ColumnInfo(name = "transaction_date")
     val transactionDate: LocalDate,

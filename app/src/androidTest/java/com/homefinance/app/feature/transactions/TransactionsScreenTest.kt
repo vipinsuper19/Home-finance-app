@@ -1,13 +1,19 @@
 package com.homefinance.app.feature.transactions
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasProgressBarRangeInfo
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.homefinance.app.R
@@ -19,6 +25,7 @@ import com.homefinance.app.data.repository.CategoryRepository
 import com.homefinance.app.data.repository.TransactionRepository
 import java.io.IOException
 import java.time.LocalDate
+import java.time.YearMonth
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -50,11 +57,7 @@ class TransactionsScreenTest {
 
     @Test
     fun theInitialLoadShowsAProgressIndicator() {
-        composeTestRule.setContent {
-            HomeFinanceTheme {
-                TransactionsContent(uiState = TransactionsUiState.Loading, onRetry = {}, onAddTransaction = {})
-            }
-        }
+        render(TransactionsUiState.Loading)
 
         composeTestRule.onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate))
             .assertIsDisplayed()
@@ -62,11 +65,7 @@ class TransactionsScreenTest {
 
     @Test
     fun theEmptyLedgerShowsTheEmptyStateRatherThanAnError() {
-        composeTestRule.setContent {
-            HomeFinanceTheme {
-                TransactionsContent(uiState = TransactionsUiState.Content(emptyList()), onRetry = {}, onAddTransaction = {})
-            }
-        }
+        render(emptyLedger())
 
         composeTestRule.onNodeWithText(text(R.string.transactions_empty_title)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.transactions_empty_message)).assertIsDisplayed()
@@ -78,15 +77,10 @@ class TransactionsScreenTest {
     fun aFailedLoadShowsTheErrorStateWithARetryAction() {
         val retries = AtomicInteger()
 
-        composeTestRule.setContent {
-            HomeFinanceTheme {
-                TransactionsContent(
-                    uiState = TransactionsUiState.Error(IOException("the database could not be read")),
-                    onRetry = { retries.incrementAndGet() },
-                    onAddTransaction = {},
-                )
-            }
-        }
+        render(
+            uiState = TransactionsUiState.Error(IOException("the database could not be read")),
+            onRetry = { retries.incrementAndGet() },
+        )
 
         composeTestRule.onNodeWithText(text(R.string.transactions_error_title)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.transactions_error_message)).assertIsDisplayed()
@@ -100,15 +94,7 @@ class TransactionsScreenTest {
     fun theEmptyLedgerOffersTheAddActionAndItOpensTheForm() {
         val adds = AtomicInteger()
 
-        composeTestRule.setContent {
-            HomeFinanceTheme {
-                TransactionsContent(
-                    uiState = TransactionsUiState.Content(emptyList()),
-                    onRetry = {},
-                    onAddTransaction = { adds.incrementAndGet() },
-                )
-            }
-        }
+        render(uiState = emptyLedger(), onAddTransaction = { adds.incrementAndGet() })
 
         // A fresh install has an empty ledger, so the add action must be offered here - not only
         // once there is already something to look at.
@@ -121,62 +107,43 @@ class TransactionsScreenTest {
 
     @Test
     fun aFailureDoesNotRenderRowsUnderneathIt() {
-        val failure = TransactionsUiState.Error(IOException("the database could not be read"))
-
-        composeTestRule.setContent {
-            HomeFinanceTheme {
-                TransactionsContent(uiState = failure, onRetry = {}, onAddTransaction = {})
-            }
-        }
+        render(TransactionsUiState.Error(IOException("the database could not be read")))
 
         composeTestRule.onNodeWithText(text(R.string.transactions_empty_title)).assertDoesNotExist()
-        composeTestRule.onNodeWithText("-${'\u20B9'}2,734.05").assertDoesNotExist()
+        composeTestRule.onNodeWithText("\u20B92,734.05").assertDoesNotExist()
     }
 
     // --------------------------------------------------------------------- content
 
     @Test
-    fun eachRowShowsItsCategoryDescriptionDateAndSignedAmount() {
-        val date = LocalDate.of(2026, 10, 15)
-
-        composeTestRule.setContent {
-            HomeFinanceTheme {
-                TransactionsContent(
-                    uiState = TransactionsUiState.Content(
-                        items = listOf(
-                            TransactionListItem(
+    fun eachRowShowsItsCategoryDescriptionAndAmount() {
+        render(
+            content(
+                listOf(
+                    group(
+                        date = GROCERIES_DAY,
+                        items = arrayOf(
+                            item(
                                 id = 1L,
                                 categoryName = "Groceries",
                                 description = "Weekly shop",
-                                transactionDate = date,
                                 amountPaise = 273_405L,
                                 type = TransactionType.EXPENSE,
-                            ),
-                            TransactionListItem(
-                                id = 2L,
-                                categoryName = "Salary",
-                                description = null,
-                                transactionDate = LocalDate.of(2026, 10, 1),
-                                amountPaise = 4_850_000L,
-                                type = TransactionType.INCOME,
+                                date = GROCERIES_DAY,
                             ),
                         ),
                     ),
-                    onRetry = {},
-                    onAddTransaction = {},
-                )
-            }
-        }
+                ),
+            ),
+        )
 
         composeTestRule.onNodeWithText("Groceries").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Salary").assertIsDisplayed()
         composeTestRule.onNodeWithText("Weekly shop").assertIsDisplayed()
         // Formatted the same way the screen formats it, so this cannot fail merely because the
         // device's locale renders the month differently.
-        composeTestRule.onNodeWithText(DateFormatter.format(date)).assertIsDisplayed()
-        // The amount carries the direction in text as well as colour.
-        composeTestRule.onNodeWithText("-${'\u20B9'}2,734.05").assertIsDisplayed()
-        composeTestRule.onNodeWithText("+${'\u20B9'}48,500.00").assertIsDisplayed()
+        composeTestRule.onNodeWithText(DateFormatter.format(GROCERIES_DAY)).assertIsDisplayed()
+        // No sign: the direction of the money is the colour, and only the colour.
+        composeTestRule.onNodeWithText("\u20B92,734.05").assertIsDisplayed()
         // Loaded rows mean no spinner.
         composeTestRule.onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate))
             .assertDoesNotExist()
@@ -184,56 +151,168 @@ class TransactionsScreenTest {
 
     @Test
     fun aRowWithoutADescriptionDrawsNoDescriptionLine() {
-        composeTestRule.setContent {
-            HomeFinanceTheme {
-                TransactionsContent(
-                    uiState = TransactionsUiState.Content(
-                        items = listOf(
-                            TransactionListItem(
+        render(
+            content(
+                listOf(
+                    group(
+                        date = SALARY_DAY,
+                        items = arrayOf(
+                            item(
                                 id = 1L,
                                 categoryName = "Salary",
                                 description = null,
-                                transactionDate = LocalDate.of(2026, 10, 1),
                                 amountPaise = 4_850_000L,
                                 type = TransactionType.INCOME,
+                                date = SALARY_DAY,
                             ),
                         ),
                     ),
-                    onRetry = {},
-                    onAddTransaction = {},
-                )
-            }
-        }
+                ),
+            ),
+        )
 
         composeTestRule.onNodeWithText("Salary").assertIsDisplayed()
-        composeTestRule.onNodeWithText("+${'\u20B9'}48,500.00").assertIsDisplayed()
+        composeTestRule.onNodeWithText("\u20B948,500.00").assertIsDisplayed()
+    }
+
+    @Test
+    fun theDayHeadingNamesTheDateAndCallsOutToday() {
+        render(
+            content(
+                listOf(
+                    group(
+                        date = GROCERIES_DAY,
+                        relation = DateRelation.TODAY,
+                        items = arrayOf(item(id = 1L, categoryName = "Groceries")),
+                    ),
+                ),
+            ),
+        )
+
+        // Built the way the screen builds it, so the parenthetical is asserted without pinning the
+        // wording of a string resource into this test as well.
+        val expected = resources.getString(
+            R.string.transactions_date_with_relation,
+            DateFormatter.format(GROCERIES_DAY),
+            resources.getString(R.string.transactions_date_today),
+        )
+
+        composeTestRule.onNodeWithText(expected).assertIsDisplayed()
     }
 
     @Test
     fun aVeryLongCategoryNameDoesNotPushTheAmountOffTheRow() {
-        composeTestRule.setContent {
-            HomeFinanceTheme {
-                TransactionsContent(
-                    uiState = TransactionsUiState.Content(
-                        items = listOf(
-                            TransactionListItem(
+        render(
+            content(
+                listOf(
+                    group(
+                        date = GROCERIES_DAY,
+                        items = arrayOf(
+                            item(
                                 id = 1L,
                                 categoryName = "A household category name far longer than the row can show",
                                 description = "A description that is also far too long to fit on one line",
-                                transactionDate = LocalDate.of(2026, 10, 15),
-                                amountPaise = 273_405L,
-                                type = TransactionType.EXPENSE,
                             ),
                         ),
                     ),
-                    onRetry = {},
-                    onAddTransaction = {},
-                )
-            }
-        }
+                ),
+            ),
+        )
 
         // The name is ellipsised instead of stealing the amount's space.
-        composeTestRule.onNodeWithText("-${'\u20B9'}2,734.05").assertIsDisplayed()
+        composeTestRule.onNodeWithText("\u20B910.00").assertIsDisplayed()
+    }
+
+    // ---------------------------------------------------------------------- filters
+
+    @Test
+    fun theSearchBoxIsShownOnceThereIsSomethingToSearch() {
+        var query by mutableStateOf("")
+        val typed = mutableListOf<String>()
+
+        render(
+            uiState = content(
+                listOf(group(date = GROCERIES_DAY, items = arrayOf(item(id = 1L, categoryName = "Groceries")))),
+                query = query,
+            ),
+            onQueryChange = { query = it; typed += it },
+        )
+
+        composeTestRule.onNodeWithText(text(R.string.transactions_search_placeholder)).assertIsDisplayed()
+
+        composeTestRule.onNode(hasSetTextAction()).performTextInput("groc")
+
+        assertEquals("groc", typed.last())
+    }
+
+    @Test
+    fun anEmptyLedgerOffersNoSearchBoxAndNoFilters() {
+        render(emptyLedger())
+
+        // There is nothing to filter, so furniture that could only ever return nothing is left out.
+        composeTestRule.onNodeWithText(text(R.string.transactions_search_placeholder)).assertDoesNotExist()
+        composeTestRule.onNodeWithText(text(R.string.transactions_filter_all)).assertDoesNotExist()
+    }
+
+    @Test
+    fun theDirectionChipsShowWhichOneIsChosenAndReportAClick() {
+        val chosen = mutableListOf<TransactionTypeFilter>()
+
+        render(
+            uiState = content(
+                listOf(group(date = GROCERIES_DAY, items = arrayOf(item(id = 1L, categoryName = "Groceries")))),
+                typeFilter = TransactionTypeFilter.ALL,
+            ),
+            onTypeFilterChange = { chosen += it },
+        )
+
+        composeTestRule.onNodeWithText(text(R.string.transactions_filter_all)).assertIsSelected()
+        composeTestRule.onNodeWithText(text(R.string.transactions_filter_income)).assertIsDisplayed()
+
+        composeTestRule.onNodeWithText(text(R.string.transactions_filter_expense)).performClick()
+
+        assertEquals(listOf(TransactionTypeFilter.EXPENSE), chosen)
+    }
+
+    @Test
+    fun theMonthChipShowsTheMonthAndOffersTheOtherMonthsThatHaveEntries() {
+        val chosenMonths = mutableListOf<YearMonth>()
+        val thisMonth = YearMonth.from(GROCERIES_DAY)
+        val lastMonth = thisMonth.minusMonths(1)
+
+        render(
+            uiState = content(
+                listOf(group(date = GROCERIES_DAY, items = arrayOf(item(id = 1L, categoryName = "Groceries")))),
+                month = thisMonth,
+                monthOptions = listOf(thisMonth, lastMonth),
+            ),
+            onMonthChange = { chosenMonths += it },
+        )
+
+        // The chip is the only node carrying this month's name until the menu opens, which is why
+        // the second month - not this one - is the item that gets clicked.
+        composeTestRule.onNodeWithText(DateFormatter.formatMonth(thisMonth)).assertIsDisplayed().performClick()
+        composeTestRule.onNodeWithText(DateFormatter.formatMonth(lastMonth)).performClick()
+
+        assertEquals(listOf(lastMonth), chosenMonths)
+    }
+
+    @Test
+    fun aFilterThatMatchesNothingExplainsItselfAndOffersToClearThem() {
+        val clears = AtomicInteger()
+
+        render(
+            uiState = content(groups = emptyList(), query = "nothing matches this"),
+            onClearFilters = { clears.incrementAndGet() },
+        )
+
+        composeTestRule.onNodeWithText(text(R.string.transactions_no_matches_title)).assertIsDisplayed()
+        // The ledger is not empty, so this must not claim it is.
+        composeTestRule.onNodeWithText(text(R.string.transactions_empty_title)).assertDoesNotExist()
+
+        composeTestRule.onNodeWithText(text(R.string.transactions_clear_filters)).performClick()
+
+        assertEquals(1, clears.get())
     }
 
     // ---------------------------------------------------------- real database path
@@ -257,13 +336,13 @@ class TransactionsScreenTest {
                     type = TransactionType.INCOME,
                     amountPaise = 4_850_000L,
                     categoryId = salary,
-                    transactionDate = LocalDate.of(2026, 10, 1),
+                    transactionDate = SALARY_DAY,
                 )
                 transactions.add(
                     type = TransactionType.EXPENSE,
                     amountPaise = 273_405L,
                     categoryId = groceries,
-                    transactionDate = LocalDate.of(2026, 10, 15),
+                    transactionDate = GROCERIES_DAY,
                     description = "Weekly shop",
                 )
             }
@@ -272,7 +351,9 @@ class TransactionsScreenTest {
                 HomeFinanceTheme {
                     TransactionsScreen(
                         onAddTransaction = {},
-                        viewModel = TransactionsViewModel(transactions),
+                        // The day the screen believes it is is pinned, so this test asserts the list
+                        // rather than whichever month the device's clock happens to be in.
+                        viewModel = TransactionsViewModel(transactions, today = TODAY),
                     )
                 }
             }
@@ -286,12 +367,90 @@ class TransactionsScreenTest {
             composeTestRule.onNodeWithText("Salary").assertIsDisplayed()
             composeTestRule.onNodeWithText("Groceries").assertIsDisplayed()
             composeTestRule.onNodeWithText("Weekly shop").assertIsDisplayed()
-            composeTestRule.onNodeWithText("+${'\u20B9'}48,500.00").assertIsDisplayed()
-            composeTestRule.onNodeWithText("-${'\u20B9'}2,734.05").assertIsDisplayed()
+            composeTestRule.onNodeWithText("\u20B948,500.00").assertIsDisplayed()
+            composeTestRule.onNodeWithText("\u20B92,734.05").assertIsDisplayed()
         } finally {
             database.close()
         }
     }
 
+    // -------------------------------------------------------------------- fixtures
+
+    /**
+     * Renders the body with every callback inert unless the test under it wants to observe one.
+     *
+     * The screen takes seven callbacks and a test usually cares about one, so they are defaulted
+     * here rather than at the composable: the production call site still has to name all seven,
+     * which is what keeps a missing wire-up from compiling.
+     */
+    private fun render(
+        uiState: TransactionsUiState,
+        onRetry: () -> Unit = {},
+        onQueryChange: (String) -> Unit = {},
+        onTypeFilterChange: (TransactionTypeFilter) -> Unit = {},
+        onMonthChange: (YearMonth) -> Unit = {},
+        onClearFilters: () -> Unit = {},
+        onAddTransaction: () -> Unit = {},
+    ) {
+        composeTestRule.setContent {
+            HomeFinanceTheme {
+                TransactionsContent(
+                    uiState = uiState,
+                    onRetry = onRetry,
+                    onQueryChange = onQueryChange,
+                    onTypeFilterChange = onTypeFilterChange,
+                    onMonthChange = onMonthChange,
+                    onClearFilters = onClearFilters,
+                    onAddTransaction = onAddTransaction,
+                )
+            }
+        }
+    }
+
+    private fun content(
+        groups: List<TransactionDateGroup>,
+        query: String = "",
+        typeFilter: TransactionTypeFilter = TransactionTypeFilter.ALL,
+        month: YearMonth = YearMonth.from(GROCERIES_DAY),
+        monthOptions: List<YearMonth> = listOf(month),
+        ledgerIsEmpty: Boolean = false,
+    ): TransactionsUiState.Content = TransactionsUiState.Content(
+        groups = groups,
+        filters = TransactionFilters(query = query, type = typeFilter, month = month),
+        monthOptions = monthOptions,
+        ledgerIsEmpty = ledgerIsEmpty,
+    )
+
+    private fun emptyLedger(): TransactionsUiState.Content =
+        content(groups = emptyList(), ledgerIsEmpty = true)
+
+    private fun group(
+        date: LocalDate,
+        relation: DateRelation = DateRelation.EARLIER,
+        items: Array<TransactionListItem>,
+    ): TransactionDateGroup = TransactionDateGroup(date = date, relation = relation, items = items.toList())
+
+    private fun item(
+        id: Long,
+        categoryName: String,
+        description: String? = null,
+        amountPaise: Long = 1_000L,
+        type: TransactionType = TransactionType.EXPENSE,
+        date: LocalDate = GROCERIES_DAY,
+    ): TransactionListItem = TransactionListItem(
+        id = id,
+        categoryName = categoryName,
+        description = description,
+        transactionDate = date,
+        amountPaise = amountPaise,
+        type = type,
+    )
+
     private fun text(id: Int): String = resources.getString(id)
+
+    private companion object {
+        val TODAY: LocalDate = LocalDate.of(2026, 10, 17)
+        val GROCERIES_DAY: LocalDate = LocalDate.of(2026, 10, 15)
+        val SALARY_DAY: LocalDate = LocalDate.of(2026, 10, 1)
+    }
 }

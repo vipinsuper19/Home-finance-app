@@ -76,6 +76,68 @@ class TransactionDaoTest {
     }
 
     /**
+     * The three columns the add form can fill in beyond the amount all survive a round trip through
+     * SQLite. A quantity and a rate are not derived on read - they are the figures that were typed -
+     * so what comes back has to be exactly what went in.
+     */
+    @Test
+    fun notesAQuantityAndARateAllSurviveTheRoundTrip() {
+        runBlocking {
+            val id = transactionDao.insert(
+                transaction(
+                    categoryId = expenseCategoryId,
+                    amountPaise = 9_000L,
+                    description = "Milk",
+                    notes = "Two bottles, delivered",
+                    quantityThousandths = 1_500L,
+                    ratePaise = 6_000L,
+                ),
+            )
+
+            val stored = transactionDao.getById(id)!!
+
+            assertEquals("Milk", stored.description)
+            assertEquals("Two bottles, delivered", stored.notes)
+            assertEquals(1_500L, stored.quantityThousandths)
+            assertEquals(6_000L, stored.ratePaise)
+        }
+    }
+
+    /**
+     * An entry with no quantity and no rate must store nothing in those columns - not zeroes, which
+     * would claim the household had recorded a rate of ₹0.00 - and an entry with no notes must
+     * store nothing rather than an empty string.
+     */
+    @Test
+    fun anEntryWithNoNotesQuantityOrRateStoresNullsRatherThanZeroes() {
+        runBlocking {
+            val id = transactionDao.insert(transaction(expenseCategoryId))
+
+            val stored = transactionDao.getById(id)!!
+
+            assertNull(stored.notes)
+            assertNull(stored.quantityThousandths)
+            assertNull(stored.ratePaise)
+        }
+    }
+
+    /** The notes column is not part of the ledger projection, so reading a row by id still finds it. */
+    @Test
+    fun notesAreStoredOnTheRowEvenThoughTheLedgerListDoesNotShowThem() {
+        runBlocking {
+            val id = transactionDao.insert(
+                transaction(expenseCategoryId, description = "Milk", notes = "Delivered"),
+            )
+
+            // The ledger list shows the description, not the notes, so the projection leaves notes
+            // out deliberately - but the row itself still has them, which is what an edit screen
+            // will read.
+            assertEquals("Milk", transactionDao.observeAllWithCategory().first().single().description)
+            assertEquals("Delivered", transactionDao.getById(id)!!.notes)
+        }
+    }
+
+    /**
      * 2^53 + 1 is the smallest integer a `Double` cannot represent, so if the amount ever went
      * through floating point this value would come back as 9 007 199 254 740 992 and the test
      * would fail. Money is stored as an exact `INTEGER`.

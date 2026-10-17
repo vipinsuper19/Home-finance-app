@@ -1,7 +1,10 @@
 package com.homefinance.app.feature.addtransaction
 
 import androidx.compose.runtime.Immutable
+import com.homefinance.app.core.util.MoneyInput
 import com.homefinance.app.core.util.MoneyParseResult
+import com.homefinance.app.core.util.QuantityInput
+import com.homefinance.app.core.util.QuantityParseResult
 import com.homefinance.app.data.model.TransactionType
 import java.time.LocalDate
 
@@ -12,31 +15,50 @@ import java.time.LocalDate
  *
  * [com.homefinance.app.feature.transactions.TransactionsUiState] is a sealed hierarchy because a
  * ledger read has to make "an error showing stale figures" impossible. A *form* is a different
- * shape of problem: the household is mid-edit, and their typed amount, chosen category, date and
- * description legitimately coexist with a category list that is still loading. Splitting that
- * into `Loading`/`Error`/`Content` variants would mean duplicating every field across each one and
- * throwing the user's half-typed entry away whenever the category query re-emitted.
+ * shape of problem: the household is mid-edit, and their typed amount, chosen category, date,
+ * description and notes legitimately coexist with a category list that is still loading. Splitting
+ * that into `Loading`/`Error`/`Content` variants would mean duplicating every field across each one
+ * and throwing the user's half-typed entry away whenever the category query re-emitted.
  *
  * The invariant that *does* matter here - "never claim the entry was saved when it was not" - is
  * not a property of the state's shape. It is enforced where it belongs: [savedTransactionId] is
  * set only after the repository call has returned, and the repository itself re-validates the
- * amount and the category against the database before it writes anything.
+ * amount, the category and the quantity-and-rate arithmetic against the database before it writes
+ * anything.
+ *
+ * ### Why the category is the whole option and not just its id
+ *
+ * The category is picked on a screen of its own, and this form has to be able to *name* what was
+ * picked without asking the database again. Keeping the [CategoryOption] - an id and the name that
+ * came with it - means the row can never show "nothing chosen" for a moment because the category
+ * list happens to be reloading. The list is still the only place an option can come from: nothing
+ * here invents a name.
  *
  * @param type which side of the ledger the entry is for; the form can flip it.
  * @param amountInput exactly what the household typed, unformatted, so the field never fights the
- *   user by rewriting their digits mid-keystroke.
- * @param amountError the reason the last save attempt rejected [amountInput], or `null`. Cleared as
- *   soon as the user edits the field again.
- * @param categoryId the chosen category, or `null` for none yet.
+ *   user by rewriting their digits mid-keystroke. Ignored while [useQuantityAndRate] is on, but kept,
+ *   so switching the mode back and forth does not throw away what was typed.
+ * @param amountError the reason the last save attempt rejected the amount - the typed one, or the one
+ *   derived from [quantityInput] and [rateInput] - or `null`. Cleared as soon as the user edits.
+ * @param category the chosen category, or `null` for none yet.
  * @param showCategoryError set when a save attempt was refused because no category was chosen.
  * @param date the calendar day the money moved; starts at today.
- * @param description optional free text.
- * @param categories the selectable categories for [type], still loading or failed.
+ * @param description optional one-line free text, shown as the ledger row's subtitle.
+ * @param notes optional longer free text, kept apart from [description].
+ * @param useQuantityAndRate whether the entry is being recorded as "1.5 at ₹60" instead of as a flat
+ *   amount. A mode rather than a separate screen, because it is the same entry either way.
+ * @param quantityInput exactly what the household typed as a quantity, unformatted.
+ * @param quantityError the reason the last save attempt rejected [quantityInput], or `null`.
+ * @param rateInput exactly what the household typed as a per-unit price, unformatted.
+ * @param rateError the reason the last save attempt rejected [rateInput], or `null`.
+ * @param categories the selectable categories for [type], still loading or failed. Rendered by the
+ *   category picker; the form itself needs only [category].
  * @param isSaving a save is in flight; the button is disabled so a double tap cannot write twice.
  * @param saveError why the last save attempt failed, or `null`.
  * @param savedTransactionId the id the repository allocated once the write actually landed. The
  *   screen navigates away when this becomes non-null and refuses further saves until it does.
- * @param categoryDialog the state of the "new category" dialog, or `null` when it is closed.
+ * @param categoryDialog the state of the "new category" dialog, or `null` when it is closed. Opened
+ *   from the category picker, never from the form.
  */
 @Immutable
 data class AddTransactionUiState(
@@ -44,18 +66,52 @@ data class AddTransactionUiState(
     val date: LocalDate,
     val amountInput: String = "",
     val amountError: MoneyParseResult.Problem? = null,
-    val categoryId: Long? = null,
+    val category: CategoryOption? = null,
     val showCategoryError: Boolean = false,
     val description: String = "",
+    val notes: String = "",
+    val useQuantityAndRate: Boolean = false,
+    val quantityInput: String = "",
+    val quantityError: QuantityParseResult.Problem? = null,
+    val rateInput: String = "",
+    val rateError: MoneyParseResult.Problem? = null,
     val categories: CategoriesUiState = CategoriesUiState.Loading,
     val isSaving: Boolean = false,
     val saveError: SaveError? = null,
     val savedTransactionId: Long? = null,
     val categoryDialog: CategoryDialogState? = null,
-)
+) {
+
+    /**
+     * The amount an entry recorded by quantity and rate will be saved as, or `null` when it cannot be
+     * worked out yet.
+     *
+     * Derived rather than stored, so it cannot go stale: it is a pure function of the two fields the
+     * household is typing, and it always answers with the exact figure
+     * [com.homefinance.app.data.repository.TransactionRepository] would accept. When it is positive
+     * the form shows it in the amount field, which is why the amount is never silently ambiguous
+     * about which of the two modes is in force.
+     *
+     * `null` means "not computable yet" and covers three honest cases that the form treats alike -
+     * the switch is off, one of the two fields is empty or invalid, or the product is too large to be
+     * money at all. Which of them it was only matters when Save is tapped, and
+     * [AddTransactionViewModel.save] reports it precisely there.
+     */
+    val derivedAmountPaise: Long?
+        get() {
+            if (!useQuantityAndRate) return null
+
+            val thousandths = (QuantityInput.parseToThousandths(quantityInput) as? QuantityParseResult.Success)
+                ?.thousandths ?: return null
+            val ratePaise = (MoneyInput.parseRupeesToPaise(rateInput) as? MoneyParseResult.Success)
+                ?.paise ?: return null
+
+            return QuantityInput.amountPaise(thousandths, ratePaise)
+        }
+}
 
 /**
- * The categories the form can offer for the currently selected type.
+ * The categories the form can offer for its currently selected type.
  *
  * Retired categories are deliberately absent from [Ready.options]: a category that has been turned
  * off must not be offered for a *new* transaction even though it still labels the old ones. The
@@ -75,7 +131,7 @@ sealed interface CategoriesUiState {
     data class Failed(val cause: Throwable) : CategoriesUiState
 }
 
-/** One selectable category: the id the ledger stores and the name the chip shows. */
+/** One selectable category: the id the ledger stores and the name the picker offers. */
 @Immutable
 data class CategoryOption(val id: Long, val name: String)
 
@@ -84,8 +140,16 @@ data class CategoryOption(val id: Long, val name: String)
 sealed interface SaveError {
 
     /**
-     * The chosen category is no longer usable - it was removed, or its type no longer matches the
-     * entry. The repository refuses the write rather than filing money under the wrong heading.
+     * The repository refused the write as impossible: there is no such category, or it is not of the
+     * entry's type.
+     *
+     * In practice this is a net rather than a path the household can walk into. The picker offers only
+     * categories of the form's own type, categories are retired rather than deleted so a chosen one
+     * cannot vanish, and the amount sent with the write was derived by
+     * [QuantityInput.amountPaise] - the very function the repository re-runs before accepting it - so
+     * none of the rules [com.homefinance.app.data.repository.TransactionRepository] enforces can be
+     * broken by anything this screen produces. It is reported anyway rather than swallowed, because
+     * the alternative would be a form that looked like it had saved an entry that does not exist.
      */
     data object CategoryUnavailable : SaveError
 
@@ -94,10 +158,12 @@ sealed interface SaveError {
 }
 
 /**
- * The "new category" dialog, opened only when the household has no active category to pick yet.
+ * The "new category" dialog, opened from the category picker and never from the form.
  *
- * A database that starts empty is the normal case on a fresh install, so without this the form
- * would be permanently unusable: there would be nothing to file the first transaction under.
+ * The form deliberately offers no way to create a category: filing an entry and inventing a place to
+ * file it are two different jobs, and only the second one belongs on a picker. It still has to exist
+ * there, because a database that starts empty is the normal case on a fresh install - without it
+ * there would be nothing at all to file the household's first transaction under.
  */
 @Immutable
 data class CategoryDialogState(

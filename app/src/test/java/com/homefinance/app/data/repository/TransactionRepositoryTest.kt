@@ -194,6 +194,281 @@ class TransactionRepositoryTest {
         }
     }
 
+    // ------------------------------------------------------------------ notes
+
+    @Test
+    fun addTrimsNotesAndTreatsABlankFieldAsNothingWritten() {
+        runBlocking {
+            val trimmed = repository.add(
+                TransactionType.EXPENSE,
+                500L,
+                groceries.id,
+                date,
+                notes = "  Bought at the Sunday market  ",
+                now = now,
+            )
+            val blank = repository.add(
+                TransactionType.EXPENSE,
+                500L,
+                groceries.id,
+                date,
+                notes = "   ",
+                now = now,
+            )
+
+            assertEquals("Bought at the Sunday market", repository.getById(trimmed)!!.notes)
+            assertNull(repository.getById(blank)!!.notes)
+        }
+    }
+
+    @Test
+    fun notesAndDescriptionAreStoredAsTwoSeparateFacts() {
+        runBlocking {
+            val id = repository.add(
+                TransactionType.EXPENSE,
+                500L,
+                groceries.id,
+                date,
+                description = "Weekly shop",
+                notes = "Vegetables and fruit for the week",
+                now = now,
+            )
+
+            val stored = repository.getById(id)!!
+            assertEquals("Weekly shop", stored.description)
+            assertEquals("Vegetables and fruit for the week", stored.notes)
+        }
+    }
+
+    @Test
+    fun updateTrimsNotesAsWell() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+
+            repository.update(repository.getById(id)!!.copy(notes = "  milk  "), now = later)
+
+            assertEquals("milk", repository.getById(id)!!.notes)
+        }
+    }
+
+    // ------------------------------------------------------ quantity and rate
+
+    @Test
+    fun addStoresAQuantityAndARateThatMultiplyToTheAmount() {
+        runBlocking {
+            val id = repository.add(
+                type = TransactionType.EXPENSE,
+                amountPaise = 9_000L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                quantityThousandths = 1_500L,
+                ratePaise = 6_000L,
+                now = now,
+            )
+
+            val stored = repository.getById(id)!!
+            assertEquals(9_000L, stored.amountPaise)
+            assertEquals(1_500L, stored.quantityThousandths)
+            assertEquals(6_000L, stored.ratePaise)
+        }
+    }
+
+    @Test
+    fun anEntryWithNoQuantityStoresNullsRatherThanZeroes() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+
+            val stored = repository.getById(id)!!
+            // A zero would claim the entry was bought at a rate; nothing was recorded, so the two
+            // columns are null - which is what "a plain amount was typed" actually means.
+            assertNull(stored.quantityThousandths)
+            assertNull(stored.ratePaise)
+        }
+    }
+
+    @Test
+    fun addAcceptsAProductThatHadToBeRoundedToTheNearestPaise() {
+        runBlocking {
+            // 0.333 x ₹59.99 is 1997.667 paise, and the repository accepts the rounded figure the
+            // form showed - because it derives it with the same function.
+            val id = repository.add(
+                type = TransactionType.EXPENSE,
+                amountPaise = 1_998L,
+                categoryId = groceries.id,
+                transactionDate = date,
+                quantityThousandths = 333L,
+                ratePaise = 5_999L,
+                now = now,
+            )
+
+            assertEquals(1_998L, repository.getById(id)!!.amountPaise)
+        }
+    }
+
+    @Test
+    fun addRejectsAQuantityWithNoRate() {
+        runBlocking {
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.add(
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 9_000L,
+                        categoryId = groceries.id,
+                        transactionDate = date,
+                        quantityThousandths = 1_500L,
+                        now = now,
+                    )
+                }
+            }
+
+            assertTrue(error.message!!.contains("together or not at all"))
+            assertTrue(transactionDao.inserted.isEmpty())
+        }
+    }
+
+    @Test
+    fun addRejectsARateWithNoQuantity() {
+        runBlocking {
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.add(
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 9_000L,
+                        categoryId = groceries.id,
+                        transactionDate = date,
+                        ratePaise = 6_000L,
+                        now = now,
+                    )
+                }
+            }
+
+            assertTrue(transactionDao.inserted.isEmpty())
+        }
+    }
+
+    @Test
+    fun addRejectsAnAmountThatIsNotTheProductOfTheQuantityAndRate() {
+        runBlocking {
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    // 1.5 litres at ₹60 is ₹90, so a row claiming to be ₹91 contradicts itself.
+                    repository.add(
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 9_100L,
+                        categoryId = groceries.id,
+                        transactionDate = date,
+                        quantityThousandths = 1_500L,
+                        ratePaise = 6_000L,
+                        now = now,
+                    )
+                }
+            }
+
+            assertTrue(error.message!!.contains("which is not"))
+            assertTrue(transactionDao.inserted.isEmpty())
+        }
+    }
+
+    @Test
+    fun addRejectsANonPositiveQuantityOrRate() {
+        runBlocking {
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.add(
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 9_000L,
+                        categoryId = groceries.id,
+                        transactionDate = date,
+                        quantityThousandths = 0L,
+                        ratePaise = 6_000L,
+                        now = now,
+                    )
+                }
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.add(
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 9_000L,
+                        categoryId = groceries.id,
+                        transactionDate = date,
+                        quantityThousandths = 1_500L,
+                        ratePaise = 0L,
+                        now = now,
+                    )
+                }
+            }
+
+            assertTrue(transactionDao.inserted.isEmpty())
+        }
+    }
+
+    @Test
+    fun addRejectsAProductThatCouldNotBeMoneyAtAll() {
+        runBlocking {
+            // Both figures fit their columns, and the amount is a perfectly good Long, but the two
+            // multiplied together overflow - so no Long amount can agree with them.
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.add(
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 500L,
+                        categoryId = groceries.id,
+                        transactionDate = date,
+                        quantityThousandths = Long.MAX_VALUE,
+                        ratePaise = Long.MAX_VALUE,
+                        now = now,
+                    )
+                }
+            }
+
+            assertTrue(transactionDao.inserted.isEmpty())
+        }
+    }
+
+    @Test
+    fun updateRejectsAQuantityAndRateThatDisagreeWithTheStoredAmount() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+            val stored = repository.getById(id)!!
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.update(
+                        stored.copy(
+                            amountPaise = 9_100L,
+                            quantityThousandths = 1_500L,
+                            ratePaise = 6_000L,
+                        ),
+                        now = later,
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
+    fun updateAcceptsAQuantityAndRateThatAgreeWithTheStoredAmount() {
+        runBlocking {
+            val id = repository.add(TransactionType.EXPENSE, 500L, groceries.id, date, now = now)
+            val stored = repository.getById(id)!!
+
+            repository.update(
+                stored.copy(
+                    amountPaise = 9_000L,
+                    quantityThousandths = 1_500L,
+                    ratePaise = 6_000L,
+                ),
+                now = later,
+            )
+
+            val updated = repository.getById(id)!!
+            assertEquals(9_000L, updated.amountPaise)
+            assertEquals(1_500L, updated.quantityThousandths)
+            assertEquals(6_000L, updated.ratePaise)
+        }
+    }
+
     // ------------------------------------------------------------- update
 
     @Test

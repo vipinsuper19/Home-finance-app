@@ -18,7 +18,8 @@ import com.homefinance.app.data.local.migration.HOME_FINANCE_MIGRATIONS
  *
  * Version 1 held only [AppSettingEntity]. Version 2 adds the financial tables, [CategoryEntity]
  * and [TransactionEntity], along with their indices and the foreign key between them - see
- * [HOME_FINANCE_MIGRATIONS] for the upgrade itself.
+ * [HOME_FINANCE_MIGRATIONS] for the upgrade itself. Version 3 adds an entry's notes and the optional
+ * quantity and rate it was bought by.
  *
  * Conventions for the persistence layer:
  * - entities live in `com.homefinance.app.data.local.entity`
@@ -39,7 +40,7 @@ import com.homefinance.app.data.local.migration.HOME_FINANCE_MIGRATIONS
         CategoryEntity::class,
         TransactionEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 @TypeConverters(HomeFinanceTypeConverters::class)

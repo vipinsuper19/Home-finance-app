@@ -28,34 +28,69 @@
     <string name="transactions_error_message">Something went wrong while reading your saved transactions. Nothing has been changed.</string>
     <string name="transactions_error_retry">Try again</string>
     <string name="transactions_add">Add transaction</string>
+    <string name="transactions_search_placeholder">Search transactions...</string>
+    <string name="transactions_search_clear">Clear search</string>
+    <string name="transactions_filter_all">All</string>
+    <string name="transactions_filter_income">Income</string>
+    <string name="transactions_filter_expense">Expense</string>
+    <string name="transactions_filter_month_description">Choose a month</string>
+    <string name="transactions_date_with_relation">%1$s (%2$s)</string>
+    <string name="transactions_date_today">Today</string>
+    <string name="transactions_date_yesterday">Yesterday</string>
+    <string name="transactions_no_matches_title">No matching transactions</string>
+    <string name="transactions_no_matches_message">Nothing in this month matches your search or filters.</string>
+    <string name="transactions_clear_filters">Clear filters</string>
 
     <!-- Add income / add expense form -->
-    <string name="add_transaction_title_income">Add income</string>
-    <string name="add_transaction_title_expense">Add expense</string>
-    <string name="add_transaction_type_label">Type</string>
+    <string name="add_transaction_title">Add Transaction</string>
     <string name="add_transaction_type_income">Income</string>
     <string name="add_transaction_type_expense">Expense</string>
-    <string name="add_transaction_amount_label">Amount</string>
-    <string name="add_transaction_amount_currency_symbol">₹</string>
+    <string name="add_transaction_amount_label">Amount (₹)</string>
+    <string name="add_transaction_amount_placeholder">0</string>
     <string name="add_transaction_amount_error_blank">Enter an amount</string>
     <string name="add_transaction_amount_error_not_a_number">Enter a valid amount, for example 250 or 250.50</string>
     <string name="add_transaction_amount_error_too_precise">Use at most two decimal places</string>
     <string name="add_transaction_amount_error_not_positive">Amount must be more than zero</string>
     <string name="add_transaction_amount_error_too_large">That amount is too large</string>
+    <string name="add_transaction_amount_error_derived_too_small">That quantity and rate work out to less than one paise</string>
+    <string name="add_transaction_amount_error_derived_too_large">That quantity and rate work out to an amount that is too large</string>
     <string name="add_transaction_category_label">Category</string>
-    <string name="add_transaction_category_loading">Loading categories...</string>
-    <string name="add_transaction_category_failed">Could not load categories</string>
-    <string name="add_transaction_category_retry">Try again</string>
-    <string name="add_transaction_category_empty">No categories for this type yet</string>
+    <string name="add_transaction_category_placeholder">Select category</string>
     <string name="add_transaction_category_required">Choose a category</string>
+    <string name="add_transaction_description_label">Description (Optional)</string>
+    <string name="add_transaction_description_placeholder">e.g. Vegetables, Fruits</string>
     <string name="add_transaction_date_label">Date</string>
-    <string name="add_transaction_description_label">Description (optional)</string>
-    <string name="add_transaction_save">Save</string>
+    <string name="add_transaction_quantity_rate_switch">Add quantity and rate (e.g. for milk)</string>
+    <string name="add_transaction_quantity_label">Quantity</string>
+    <string name="add_transaction_quantity_placeholder">e.g. 1.5</string>
+    <string name="add_transaction_quantity_error_blank">Enter a quantity</string>
+    <string name="add_transaction_quantity_error_not_a_number">Enter a valid quantity, for example 1.5</string>
+    <string name="add_transaction_quantity_error_too_precise">Use at most three decimal places</string>
+    <string name="add_transaction_quantity_error_not_positive">Quantity must be more than zero</string>
+    <string name="add_transaction_quantity_error_too_large">That quantity is too large</string>
+    <string name="add_transaction_rate_label">Rate (₹)</string>
+    <string name="add_transaction_rate_placeholder">0</string>
+    <string name="add_transaction_rate_error_blank">Enter a rate</string>
+    <string name="add_transaction_rate_error_not_a_number">Enter a valid rate, for example 60 or 60.50</string>
+    <string name="add_transaction_rate_error_too_precise">Use at most two decimal places</string>
+    <string name="add_transaction_rate_error_not_positive">Rate must be more than zero</string>
+    <string name="add_transaction_rate_error_too_large">That rate is too large</string>
+    <string name="add_transaction_notes_label">Notes (Optional)</string>
+    <string name="add_transaction_notes_placeholder">Add notes...</string>
+    <string name="add_transaction_save">Save Transaction</string>
     <string name="add_transaction_saving">Saving...</string>
     <string name="add_transaction_save_error_category">That category is no longer available. Choose another.</string>
     <string name="add_transaction_save_error_generic">Could not save. Nothing was changed.</string>
 
-    <!-- New category dialog, offered only when there is nothing to file the entry under -->
+    <!-- Category picker, opened from the form's Category row -->
+    <string name="category_picker_title">Select category</string>
+    <string name="category_picker_loading">Loading categories...</string>
+    <string name="category_picker_failed">Could not load categories</string>
+    <string name="category_picker_retry">Try again</string>
+    <string name="category_picker_empty">No categories for this type yet</string>
+    <string name="category_picker_empty_action">Add your first category</string>
+
+    <!-- New category dialog, offered only from the category picker -->
     <string name="add_category_action">Add category</string>
     <string name="add_category_dialog_title">New category</string>
     <string name="add_category_name_label">Name</string>

@@ -141,6 +141,78 @@ class RepositoryDatabaseIntegrationTest {
         }
     }
 
+    /**
+     * A quantity, a rate and notes all survive a real insert, and the two stored figures multiply
+     * back to the stored amount through SQLite's own integer columns - without a `Double` ever
+     * touching any of the three.
+     */
+    @Test
+    fun aQuantityAndRateEntryRoundTripsThroughTheRealDatabase() {
+        runBlocking {
+            val categoryId = expenseCategory("Milk")
+
+            val id = transactionRepository.add(
+                type = TransactionType.EXPENSE,
+                amountPaise = 9_000L,
+                categoryId = categoryId,
+                transactionDate = date,
+                notes = "  Two bottles, delivered  ",
+                quantityThousandths = 1_500L,
+                ratePaise = 6_000L,
+                now = now,
+            )
+
+            val stored = transactionRepository.getById(id)!!
+            assertEquals(9_000L, stored.amountPaise)
+            assertEquals(1_500L, stored.quantityThousandths)
+            assertEquals(6_000L, stored.ratePaise)
+            assertEquals("Two bottles, delivered", stored.notes)
+        }
+    }
+
+    @Test
+    fun aQuantityThatDoesNotAgreeWithTheAmountIsRejectedBeforeAnythingIsWritten() {
+        runBlocking {
+            val categoryId = expenseCategory("Milk")
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    transactionRepository.add(
+                        type = TransactionType.EXPENSE,
+                        amountPaise = 9_100L,
+                        categoryId = categoryId,
+                        transactionDate = date,
+                        quantityThousandths = 1_500L,
+                        ratePaise = 6_000L,
+                        now = now,
+                    )
+                }
+            }
+
+            assertTrue(transactionRepository.observeAll().first().isEmpty())
+        }
+    }
+
+    @Test
+    fun anEntryTypedAsAPlainAmountStoresNoQuantityOrRate() {
+        runBlocking {
+            val categoryId = expenseCategory()
+
+            val id = transactionRepository.add(
+                type = TransactionType.EXPENSE,
+                amountPaise = 12_345L,
+                categoryId = categoryId,
+                transactionDate = date,
+                now = now,
+            )
+
+            val stored = transactionRepository.getById(id)!!
+            assertNull(stored.quantityThousandths)
+            assertNull(stored.ratePaise)
+            assertNull(stored.notes)
+        }
+    }
+
     @Test
     fun aZeroAmountIsRejected() {
         runBlocking {

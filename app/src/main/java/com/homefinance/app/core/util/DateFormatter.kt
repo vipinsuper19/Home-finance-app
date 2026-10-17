@@ -1,11 +1,15 @@
 package com.homefinance.app.core.util
 
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /** Day, abbreviated month name, year - for example `15 Oct 2026`. */
 private const val PATTERN = "d MMM yyyy"
+
+/** Abbreviated month name, year - for example `Oct 2026`. */
+private const val MONTH_PATTERN = "MMM yyyy"
 
 /**
  * Formats the calendar dates a household reads: the day a transaction's money moved.
@@ -33,4 +37,16 @@ object DateFormatter {
 
     fun format(date: LocalDate, locale: Locale = Locale.getDefault()): String =
         DateTimeFormatter.ofPattern(PATTERN, locale).format(date)
+
+    /**
+     * Formats the month a filter is scoped to - for example `Oct 2026`.
+     *
+     * A [YearMonth] has no day at all, so this shares the same guarantee as [format]: there is no
+     * instant and no zone for a timezone offset to shift, and a month can never be displayed as the
+     * one before or after it. The two-character month is deliberately never abbreviated to a
+     * number, for the same reason the day comes first: `10/2026` is unambiguous only to someone who
+     * already knows the answer.
+     */
+    fun formatMonth(yearMonth: YearMonth, locale: Locale = Locale.getDefault()): String =
+        DateTimeFormatter.ofPattern(MONTH_PATTERN, locale).format(yearMonth)
 }

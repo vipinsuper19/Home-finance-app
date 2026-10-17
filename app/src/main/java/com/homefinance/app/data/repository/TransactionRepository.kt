@@ -1,5 +1,6 @@
 package com.homefinance.app.data.repository
 
+import com.homefinance.app.core.util.QuantityInput
 import com.homefinance.app.data.local.dao.CategoryDao
 import com.homefinance.app.data.local.dao.TransactionDao
 import com.homefinance.app.data.local.entity.TransactionEntity
@@ -24,10 +25,14 @@ import kotlinx.coroutines.flow.Flow
  *  2. **A transaction's category must exist and must be of the same type.** `"Salary"` is an
  *     income category, so an expense filed under it is nonsense even though both rows are
  *     individually valid.
+ *  3. **A quantity and a rate are recorded together, and the amount is exactly their product.** A
+ *     quantity with no rate says nothing about the money, and a stored amount that disagreed with
+ *     the quantity and rate beside it would make the row contradict itself. Both halves are checked
+ *     here against the one multiplication in [QuantityInput.amountPaise].
  *
  * ### How honestly this is enforced
  *
- * Both rules are checked here, immediately before the write. The foreign key from
+ * All three rules are checked here, immediately before the write. The foreign key from
  * `transactions.category_id` to `categories.id` is a second, independent backstop for the
  * "category must exist" half of rule 2 - see [TransactionEntity].
  *
@@ -85,12 +90,19 @@ class TransactionRepository(
      * Records a transaction and returns its new `id`.
      *
      * @param amountPaise positive amount in **paise**; the direction comes from [type], not from a
-     *   sign.
+     *   sign. When [quantityThousandths] and [ratePaise] are given this must be exactly their
+     *   product.
      * @param description optional free text; trimmed, and stored as `null` when blank.
+     * @param notes optional longer free text; normalised exactly as [description] is.
+     * @param quantityThousandths how many thousandths of a unit were bought, or `null` for an entry
+     *   recorded as a plain amount. Must be given together with [ratePaise].
+     * @param ratePaise the price of one unit in paise, or `null`. Must be given together with
+     *   [quantityThousandths].
      * @param now injection point for tests so audit timestamps are deterministic.
      *
      * @throws IllegalArgumentException if [amountPaise] is zero or negative, if no category has
-     *   [categoryId], or if that category's type is not [type].
+     *   [categoryId], if that category's type is not [type], or if the quantity, the rate and the
+     *   amount do not agree.
      * @throws android.database.sqlite.SQLiteConstraintException if [categoryId] is removed between
      *   the check and the insert.
      */
@@ -100,10 +112,14 @@ class TransactionRepository(
         categoryId: Long,
         transactionDate: LocalDate,
         description: String? = null,
+        notes: String? = null,
+        quantityThousandths: Long? = null,
+        ratePaise: Long? = null,
         now: Instant = Instant.now(),
     ): Long {
         requirePositiveAmount(amountPaise)
         requireCategoryOfType(categoryId, type)
+        requireQuantityAndRateAgree(amountPaise, quantityThousandths, ratePaise)
 
         return transactionDao.insert(
             TransactionEntity(
@@ -111,6 +127,9 @@ class TransactionRepository(
                 amountPaise = amountPaise,
                 categoryId = categoryId,
                 description = description.normalizedOrNull(),
+                notes = notes.normalizedOrNull(),
+                quantityThousandths = quantityThousandths,
+                ratePaise = ratePaise,
                 transactionDate = transactionDate,
                 createdAt = now,
                 updatedAt = now,
@@ -125,15 +144,21 @@ class TransactionRepository(
      * [transaction]'s `updatedAt` is ignored and replaced with [now].
      *
      * @throws IllegalArgumentException if the amount is not positive, if the category is missing,
-     *   or if its type does not match.
+     *   if its type does not match, or if the quantity, the rate and the amount do not agree.
      */
     suspend fun update(transaction: TransactionEntity, now: Instant = Instant.now()) {
         requirePositiveAmount(transaction.amountPaise)
         requireCategoryOfType(transaction.categoryId, transaction.type)
+        requireQuantityAndRateAgree(
+            amountPaise = transaction.amountPaise,
+            quantityThousandths = transaction.quantityThousandths,
+            ratePaise = transaction.ratePaise,
+        )
 
         transactionDao.update(
             transaction.copy(
                 description = transaction.description.normalizedOrNull(),
+                notes = transaction.notes.normalizedOrNull(),
                 updatedAt = now,
             ),
         )
@@ -161,7 +186,45 @@ class TransactionRepository(
                 "$type transaction"
         }
     }
+
+    /**
+     * Enforces rule 3: the two halves of a quantity-and-rate entry travel together, and the amount is
+     * exactly what they multiply to.
+     *
+     * The comparison is against [QuantityInput.amountPaise] - the same function the form uses to show
+     * the household what will be saved - so "the form said ₹90.00" and "the database refuses anything
+     * but 9000 paise" cannot drift apart. A row with a quantity and a rate but a hand-typed amount
+     * would let the ledger claim to have been entered as `1.5 x ₹60` while holding a different figure,
+     * which is precisely the contradiction this refuses.
+     *
+     * An exact mismatch (an amount that does not fit a `Long` at all) comes back from
+     * [QuantityInput.amountPaise] as `null` and simply cannot equal a `Long`, so it is refused by the
+     * same comparison.
+     */
+    private fun requireQuantityAndRateAgree(
+        amountPaise: Long,
+        quantityThousandths: Long?,
+        ratePaise: Long?,
+    ) {
+        require((quantityThousandths == null) == (ratePaise == null)) {
+            "A quantity and a rate are recorded together or not at all, but got " +
+                "quantity=$quantityThousandths and rate=$ratePaise"
+        }
+
+        if (quantityThousandths == null || ratePaise == null) return
+
+        require(quantityThousandths > 0L && ratePaise > 0L) {
+            "A quantity and a rate are magnitudes, but got quantity=$quantityThousandths and " +
+                "rate=$ratePaise"
+        }
+
+        val derived = QuantityInput.amountPaise(quantityThousandths, ratePaise)
+        require(derived == amountPaise) {
+            "$quantityThousandths thousandths at $ratePaise paise each is $derived paise, which " +
+                "is not the $amountPaise paise this row claims to be worth"
+        }
+    }
 }
 
-/** Trims, and treats an all-whitespace description as "no description" rather than `"   "`. */
+/** Trims, and treats all-whitespace free text as "nothing written" rather than as `"   "`. */
 private fun String?.normalizedOrNull(): String? = this?.trim()?.takeIf { it.isNotEmpty() }

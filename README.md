@@ -19,20 +19,21 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Offline-first application architecture.
 - Room database foundation with schema export.
 - Application-scoped, lazy database initialization.
-- Income/expense transaction and category tables, with a tested version 1 to version 2 migration.
+- Income/expense transaction and category tables, with tested version 1 to version 2 and version 2 to version 3 migrations.
 - DAOs for categories and transactions, plus a repository layer that validates amounts, category references, and category types.
-- A transaction list showing each entry's category, description, date, and signed amount.
-- Add income and add expense forms with exact paise parsing, validation, category selection, a date picker, and an optional description.
-- Creating a category from the add form when no category exists yet.
-- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, repository validation, money input parsing, date conversion, and the add-transaction form state.
-- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety, and the transaction and add-transaction screens.
+- A transaction list grouped under day headings, with a search box, all/income/expense filters and a month selector, showing each entry's category, description and amount in the colour of its direction.
+- Add income and add expense forms with exact paise parsing, validation, a date picker, and optional description and notes.
+- A separate category picker screen, listing the categories of the current type and offering to create one when there are none yet.
+- Optional quantity-and-rate entry for things bought by weight or volume, such as milk, with the amount derived from the two figures and stored alongside them.
+- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, repository validation, money and quantity input parsing, date conversion, transaction list filtering and grouping, category mark selection, and the add-transaction form state.
+- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety, and the transaction list, add-transaction form and category picker screens.
 - No backend or account registration required for the current architecture.
 
 ### Planned
 
 - Edit and delete existing transactions.
 - Manage categories: rename, retire, and restore them.
-- Track daily milk purchases using quantity and rate.
+- Track daily milk purchases over time, now that a single purchase can be recorded by quantity and rate.
 - Manage recurring household expenses.
 - Track monthly rental income.
 - Record expected and actual rent receipts, including partial payments and outstanding balances.
@@ -103,8 +104,10 @@ app/
 │   │   │   ├── feature/
 │   │   │   │   ├── home/
 │   │   │   │   ├── transactions/
+│   │   │   │   ├── addtransaction/
 │   │   │   │   ├── recurring/
-│   │   │   │   └── reports/
+│   │   │   │   ├── reports/
+│   │   │   │   └── settings/
 │   │   │   ├── navigation/
 │   │   │   ├── HomeFinanceApp.kt
 │   │   │   └── MainActivity.kt
@@ -197,6 +200,7 @@ The following rules guide financial feature development:
 
 - Store monetary amounts as integer paise using `Long`.
 - Avoid floating-point values for financial calculations.
+- Store a typed quantity as integer thousandths and a rate as integer paise per unit, so a purchase by weight or volume is recorded as the two figures the household actually saw rather than only as a total.
 - Keep expected amounts distinct from actual payments.
 - Preserve historical financial records when categories or recurring settings change.
 - Do not delete existing user data through destructive database migrations.
