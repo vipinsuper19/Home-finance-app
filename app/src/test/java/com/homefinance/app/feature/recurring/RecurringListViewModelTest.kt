@@ -31,6 +31,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -314,6 +315,137 @@ class RecurringListViewModelTest {
         assertEquals(listOf("Shop rent"), state.schedules.map { it.name })
     }
 
+    // ----------------------------------------------------------------- the filter
+
+    @Test
+    fun theListStartsShowingBothDirections() = runTest {
+        val fixture = Fixture(
+            schedules = listOf(
+                schedule(id = 1L, name = "Shop rent"),
+                schedule(id = 2L, name = "Salary", categoryId = SALARY_ID, amountPaise = 4_500_000L),
+            ),
+        )
+        val viewModel = fixture.viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        val state = viewModel.ready()
+        assertEquals(ScheduleTypeFilter.ALL, state.filter)
+        // The order the query chose is Room's business (asserted in `RecurringDaoTest`); what matters here
+        // is that the default filter hides nothing.
+        assertEquals(setOf("Shop rent", "Salary"), state.schedules.map { it.name }.toSet())
+    }
+
+    @Test
+    fun choosingIncomeLeavesOnlyTheIncomeSchedules() = runTest {
+        val fixture = Fixture(
+            schedules = listOf(
+                schedule(id = 1L, name = "Shop rent"),
+                schedule(id = 2L, name = "Salary", categoryId = SALARY_ID, amountPaise = 4_500_000L),
+            ),
+        )
+        val viewModel = fixture.viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onFilterChange(ScheduleTypeFilter.INCOME)
+        advanceUntilIdle()
+
+        // Filtered in memory, from the rows the query already returned: a filter must never re-read the
+        // database, because a re-read is a second chance to disagree with what is on screen.
+        val state = viewModel.ready()
+        assertEquals(listOf("Salary"), state.schedules.map { it.name })
+        assertEquals(TransactionType.INCOME, state.schedules.single().categoryType)
+    }
+
+    @Test
+    fun choosingExpenseLeavesOnlyTheExpenseSchedules() = runTest {
+        val fixture = Fixture(
+            schedules = listOf(
+                schedule(id = 1L, name = "Shop rent"),
+                schedule(id = 2L, name = "Salary", categoryId = SALARY_ID, amountPaise = 4_500_000L),
+            ),
+        )
+        val viewModel = fixture.viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onFilterChange(ScheduleTypeFilter.EXPENSE)
+        advanceUntilIdle()
+
+        assertEquals(listOf("Shop rent"), viewModel.ready().schedules.map { it.name })
+    }
+
+    @Test
+    fun aFilterThatExcludesEverythingStillSaysTheHouseholdHasSchedules() = runTest {
+        val fixture = Fixture(schedules = listOf(schedule(id = 1L, name = "Shop rent")))
+        val viewModel = fixture.viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onFilterChange(ScheduleTypeFilter.INCOME)
+        advanceUntilIdle()
+
+        // The distinction the screen draws: "you have no schedules" and "none of yours are income" are
+        // different sentences, and printing the first for the second would be a lie about the household's
+        // own ledger.
+        val state = viewModel.ready()
+        assertEquals(emptyList<String>(), state.schedules.map { it.name })
+        assertTrue(state.hasAnySchedule)
+    }
+
+    @Test
+    fun anEmptyDatabaseSaysThereIsNothingToFilter() = runTest {
+        val viewModel = Fixture().viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.ready().hasAnySchedule)
+    }
+
+    @Test
+    fun choosingAllAgainBringsTheWholeListBack() = runTest {
+        val fixture = Fixture(
+            schedules = listOf(
+                schedule(id = 1L, name = "Shop rent"),
+                schedule(id = 2L, name = "Salary", categoryId = SALARY_ID, amountPaise = 4_500_000L),
+            ),
+        )
+        val viewModel = fixture.viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        viewModel.onFilterChange(ScheduleTypeFilter.INCOME)
+        advanceUntilIdle()
+        viewModel.onFilterChange(ScheduleTypeFilter.ALL)
+        advanceUntilIdle()
+
+        assertEquals(setOf("Shop rent", "Salary"), viewModel.ready().schedules.map { it.name }.toSet())
+    }
+
+    @Test
+    fun theUnitPriceIsCarriedOntoTheRow() = runTest {
+        val fixture = Fixture(
+            schedules = listOf(
+                schedule(id = 1L, name = "Milk", amountPaise = 6_000L, unit = "litre", ratePaise = 6_000L),
+            ),
+        )
+        val viewModel = fixture.viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        val card = viewModel.ready().schedules.single()
+        assertEquals("litre", card.unit)
+        assertEquals(6_000L, card.ratePaise)
+    }
+
     // ------------------------------------------------------------------ fixtures
 
     /** Starts collecting the state the way the screen does, so the shared flow actually runs. */
@@ -351,6 +483,8 @@ class RecurringListViewModelTest {
     ) {
         private val names: Map<Long, String> = categories.associate { it.id to it.name }
 
+        private val types: Map<Long, TransactionType> = categories.associate { it.id to it.type }
+
         private val categoryDao = FakeCategoryDao(categories)
 
         val transactionDao = FakeTransactionDao(categoryNames = names)
@@ -359,6 +493,7 @@ class RecurringListViewModelTest {
             categoryNames = names,
             initialSchedules = schedules,
             initialOccurrences = occurrences,
+            categoryTypes = types,
         )
 
         val repository = RecurringRepository(
@@ -374,16 +509,21 @@ class RecurringListViewModelTest {
 
         const val SCHEDULE_ID = 1L
         const val RENT_ID = 10L
+        const val SALARY_ID = 11L
 
         val TODAY: LocalDate = LocalDate.of(2026, 10, 20)
 
         val DEFAULT_CATEGORIES: List<CategoryEntity> = listOf(
             CategoryEntity.create("Rent", TransactionType.EXPENSE).copy(id = RENT_ID),
+            CategoryEntity.create("Salary", TransactionType.INCOME).copy(id = SALARY_ID),
         )
 
         /**
          * A monthly schedule on the 5th that has already been generated up to today, so that a test
          * which is not about generation is not disturbed by it.
+         *
+         * The direction of the row is not a field here: it is whatever the category it is filed under
+         * says, which is the whole reason an income schedule needs no column of its own.
          */
         fun schedule(
             id: Long = SCHEDULE_ID,
@@ -391,12 +531,18 @@ class RecurringListViewModelTest {
             status: RecurringScheduleStatus = RecurringScheduleStatus.ACTIVE,
             startDate: LocalDate = LocalDate.of(2026, 10, 5),
             generatedThrough: LocalDate? = TODAY,
+            categoryId: Long = RENT_ID,
+            amountPaise: Long = 1_500_000L,
+            unit: String? = null,
+            ratePaise: Long? = null,
         ): RecurringScheduleEntity = RecurringScheduleEntity(
             id = id,
             name = name,
             description = null,
-            categoryId = RENT_ID,
-            amountPaise = 1_500_000L,
+            categoryId = categoryId,
+            amountPaise = amountPaise,
+            unit = unit,
+            ratePaise = ratePaise,
             frequency = RecurrenceFrequency.MONTHLY,
             intervalCount = 1,
             startDate = startDate,

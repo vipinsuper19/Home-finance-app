@@ -2,6 +2,7 @@ package com.homefinance.app.data.local.relation
 
 import androidx.room.ColumnInfo
 import com.homefinance.app.data.model.RecurringOccurrenceStatus
+import com.homefinance.app.data.model.TransactionType
 import java.time.Instant
 import java.time.LocalDate
 
@@ -57,4 +58,24 @@ data class RecurringOccurrenceDetail(
 
     @ColumnInfo(name = "category_name")
     val categoryName: String,
+
+    /**
+     * That category's own type, which is the direction of the money this payment moves.
+     *
+     * Carried so the payment sheet can say what it is about to write - "this will create a new income
+     * transaction" - and colour its heading, without a second read while the sheet is already open. It
+     * is the same value [com.homefinance.app.data.repository.RecurringRepository.markOccurrencePaid]
+     * files the entry under, so the sheet cannot promise one direction and record the other.
+     */
+    @ColumnInfo(name = "category_type")
+    val categoryType: TransactionType,
+
+    /**
+     * The mark that category is drawn with, or `null` when nobody ever chose one - see
+     * [com.homefinance.app.data.model.CategoryIconKey]. Read from the schedule's category, which is
+     * the category the payment will be filed under, so a row and its dialog agree on the picture as
+     * well as on the name.
+     */
+    @ColumnInfo(name = "category_icon_key")
+    val categoryIconKey: String? = null,
 )

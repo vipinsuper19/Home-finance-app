@@ -145,13 +145,15 @@
     <string name="add_category_error_failed">Could not create the category</string>
 
     <!-- Recurring tab: the list of schedules -->
-    <string name="recurring_error_title">Could not load recurring expenses</string>
+    <string name="recurring_screen_title">Recurring Schedules</string>
+    <string name="recurring_error_title">Could not load your schedules</string>
     <string name="recurring_error_message">Something went wrong while reading your schedules. Nothing has been changed.</string>
     <string name="recurring_error_retry">Try again</string>
-    <string name="recurring_add">Add recurring expense</string>
-    <string name="recurring_empty_title">No recurring expenses yet</string>
-    <string name="recurring_empty_message">Add rent, milk or any other bill that comes round, and Home Finance will tell you when it is next due.</string>
+    <string name="recurring_add">Add schedule</string>
+    <string name="recurring_empty_title">No recurring schedules yet</string>
+    <string name="recurring_empty_message">Add rent, milk, your salary or anything else that comes round, and Home Finance will tell you when it is next due.</string>
     <string name="recurring_empty_action">Add your first schedule</string>
+    <string name="recurring_no_matches">No schedules match this filter.</string>
     <string name="recurring_action_failed">Could not change that schedule. Nothing was changed.</string>
     <string name="recurring_generation_failed">Some due dates could not be brought up to date. They will be filled in on your next visit.</string>
 
@@ -159,6 +161,10 @@
     <string name="recurring_nothing_outstanding">Nothing outstanding</string>
     <string name="recurring_next_due">Next: %1$s</string>
     <string name="recurring_overdue_since">Overdue since %1$s</string>
+
+    <!-- What a schedule's unit price reads as, on its row and on its details -->
+    <string name="recurring_rate_per_unit">%1$s / %2$s</string>
+    <string name="recurring_detail_unit_price">Unit price: %1$s / %2$s</string>
 
     <!-- How often a schedule repeats -->
     <string name="recurring_frequency_daily">Daily</string>
@@ -197,10 +203,10 @@
     <string name="recurring_occurrence_overdue">Overdue</string>
     <string name="recurring_occurrence_paid">Paid</string>
     <string name="recurring_occurrence_skipped">Skipped</string>
-    <string name="recurring_occurrence_payment_removed">The recorded expense was removed</string>
+    <string name="recurring_occurrence_payment_removed">The recorded entry was removed</string>
 
     <!-- One schedule's details -->
-    <string name="recurring_detail_title">Recurring expense</string>
+    <string name="recurring_detail_title">Recurring Details</string>
     <string name="recurring_missing_title">This schedule is gone</string>
     <string name="recurring_missing_message">It is no longer in your records.</string>
     <string name="recurring_missing_action">Back to recurring</string>
@@ -209,20 +215,39 @@
     <string name="recurring_detail_frequency_label">Repeats</string>
     <string name="recurring_start_label">First occurrence</string>
     <string name="recurring_end_label">Last occurrence</string>
-    <string name="recurring_end_none">Until paused</string>
-    <string name="recurring_detail_status_label">Status</string>
-    <string name="recurring_detail_occurrence_count_label">Dates generated</string>
-    <string name="recurring_detail_added_label">Added</string>
-    <string name="recurring_detail_expected_occurrence">Expected %1$s</string>
+    <string name="recurring_end_none">No end date</string>
     <string name="recurring_detail_nothing_due_title">Nothing due right now</string>
     <string name="recurring_detail_nothing_due_message">The next date will appear here when it falls due.</string>
-    <string name="recurring_detail_history_title">Occurrence history</string>
-    <string name="recurring_detail_history_open">View all occurrences</string>
-    <string name="recurring_detail_edit">Edit schedule</string>
     <string name="recurring_detail_pause">Pause</string>
     <string name="recurring_detail_resume">Resume</string>
     <string name="recurring_detail_stop">Stop</string>
     <string name="recurring_detail_retired_note">This schedule is stopped. Its history is kept, and it will not generate any new dates.</string>
+
+    <!-- The redesigned details screen: heading, next payment, information, history -->
+    <string name="recurring_detail_direction">%1$s %2$s</string>
+    <string name="recurring_detail_more_actions">More actions</string>
+    <string name="recurring_detail_next_payment">Next payment</string>
+    <string name="recurring_detail_mark_received">Mark %1$s as Received</string>
+    <string name="recurring_detail_mark_paid">Mark %1$s as Paid</string>
+    <string name="recurring_detail_schedule_information">Schedule Information</string>
+    <string name="recurring_detail_description_label">Description</string>
+    <string name="recurring_detail_edit_short">Edit</string>
+    <string name="recurring_detail_payment_summary">Payment Summary</string>
+    <string name="recurring_detail_stat_paid">Paid</string>
+    <string name="recurring_detail_stat_upcoming">Upcoming</string>
+    <string name="recurring_detail_stat_overdue">Overdue</string>
+    <string name="recurring_detail_recent_payments">Upcoming &amp; Recent Payments</string>
+    <string name="recurring_detail_view_all">View All Occurrences</string>
+    <plurals name="recurring_due_in_days">
+        <item quantity="one">Due tomorrow</item>
+        <item quantity="other">Due in %1$d days</item>
+    </plurals>
+    <plurals name="recurring_overdue_by_days">
+        <item quantity="one">%1$d day overdue</item>
+        <item quantity="other">%1$d days overdue</item>
+    </plurals>
+    <string name="recurring_paid_on">Paid on %1$s</string>
+    <string name="recurring_skipped_on">Skipped on %1$s</string>
 
     <!-- One schedule's occurrence history -->
     <string name="recurring_occurrences_title">Occurrences</string>
@@ -230,18 +255,25 @@
     <string name="recurring_occurrences_empty_message">They appear here as each due date comes round.</string>
 
     <!-- Recording that an occurrence was paid -->
-    <string name="recurring_pay_action">Mark as paid</string>
-    <string name="recurring_pay_title">Record this payment?</string>
+    <string name="recurring_pay_action_paid">Mark as Paid</string>
+    <string name="recurring_pay_action_received">Mark as Received</string>
     <string name="recurring_pay_expected_label">Expected</string>
-    <string name="recurring_pay_amount_label">Amount paid (\u20B9)</string>
-    <string name="recurring_pay_hint">This adds one expense to your ledger. Nothing is recorded until you confirm.</string>
-    <string name="recurring_pay_confirm">Record payment</string>
     <string name="recurring_pay_working">Recording...</string>
+
+    <!-- The sheet that records one occurrence's payment -->
+    <string name="recurring_pay_sheet_title_income">Mark Payment as Received</string>
+    <string name="recurring_pay_sheet_title_expense">Mark Payment as Paid</string>
+    <string name="recurring_pay_sheet_intro">You are about to record this payment.</string>
+    <string name="recurring_pay_sheet_description_label">Description</string>
+    <string name="recurring_pay_sheet_due_date_value">%1$s (%2$s)</string>
+    <string name="recurring_pay_sheet_note_income">This creates a new income transaction and marks this occurrence as paid.</string>
+    <string name="recurring_pay_sheet_note_expense">This creates a new expense transaction and marks this occurrence as paid.</string>
+    <string name="recurring_pay_sheet_confirm">Confirm &amp; Record Payment</string>
 
     <!-- Deciding an occurrence was not paid -->
     <string name="recurring_skip_action">Skip</string>
     <string name="recurring_skip_title">Skip this occurrence?</string>
-    <string name="recurring_skip_message">%1$s due %2$s will not be paid. No expense is recorded, and this date will not come round again.</string>
+    <string name="recurring_skip_message">%1$s due %2$s will not be paid. Nothing is recorded, and this date will not come round again.</string>
     <string name="recurring_skip_confirm">Skip</string>
     <string name="recurring_skip_working">Skipping...</string>
 
@@ -255,14 +287,20 @@
     <string name="recurring_stop_confirm_message">It will not generate any new dates. Everything already recorded is kept, and this cannot be undone.</string>
     <string name="recurring_stop_confirm_action">Stop schedule</string>
 
-    <!-- The add/edit recurring expense form -->
-    <string name="recurring_form_add_title">New recurring expense</string>
-    <string name="recurring_form_edit_title">Edit recurring expense</string>
+    <!-- The add/edit recurring schedule form -->
+    <string name="recurring_form_add_title">New recurring schedule</string>
+    <string name="recurring_form_edit_title">Edit recurring schedule</string>
     <string name="recurring_form_name_label">Name</string>
     <string name="recurring_form_name_placeholder">Shop rent</string>
     <string name="recurring_form_name_error">Give this schedule a name</string>
     <string name="recurring_form_description_label">Description (optional)</string>
     <string name="recurring_form_description_placeholder">Ground floor, paid by UPI</string>
+    <string name="recurring_form_unit_rate_switch">Add a unit price (e.g. for milk)</string>
+    <string name="recurring_form_unit_label">Unit</string>
+    <string name="recurring_form_unit_placeholder">litre</string>
+    <string name="recurring_form_unit_error">Name what one unit is, for example litre or kg</string>
+    <string name="recurring_form_rate_label">Price per unit (\u20B9)</string>
+    <string name="recurring_form_rate_placeholder">60</string>
     <string name="recurring_form_amount_label">Expected amount (\u20B9)</string>
     <string name="recurring_form_frequency_label">Repeats</string>
     <string name="recurring_form_interval_label">Repeat every (%1$s)</string>

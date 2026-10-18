@@ -52,7 +52,7 @@ class CategoryEntityTest {
 
     @Test
     fun createNormalizesTheNameAndKeepsTheRest() {
-        val category = CategoryEntity.create("  House  Rent ", TransactionType.EXPENSE, now)
+        val category = CategoryEntity.create("  House  Rent ", TransactionType.EXPENSE, createdAt = now)
 
         assertEquals("House Rent", category.name)
         assertEquals(TransactionType.EXPENSE, category.type)
@@ -64,7 +64,7 @@ class CategoryEntityTest {
     @Test
     fun createRejectsABlankName() {
         assertThrows(IllegalArgumentException::class.java) {
-            CategoryEntity.create("   ", TransactionType.INCOME, now)
+            CategoryEntity.create("   ", TransactionType.INCOME, createdAt = now)
         }
     }
 }

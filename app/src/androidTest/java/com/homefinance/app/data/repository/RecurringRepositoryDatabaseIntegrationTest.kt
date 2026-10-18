@@ -406,6 +406,70 @@ class RecurringRepositoryDatabaseIntegrationTest {
     }
 
     @Test
+    fun anIncomeScheduleTurnsIntoIncomeWhenItIsPaid() {
+        runBlocking {
+            val categoryId = incomeCategory()
+            val scheduleId = createSchedule(
+                categoryId = categoryId,
+                name = "Salary",
+                amountPaise = 4_500_000L,
+                startDate = today.minusMonths(1),
+            )
+            val occurrence = recurringRepository.observeOccurrences(scheduleId).first()
+                .minByOrNull { it.dueDate }!!
+
+            val paid = recurringRepository.markOccurrencePaid(
+                occurrenceId = occurrence.id,
+                amountPaise = occurrence.amountPaise,
+                now = now,
+            ) as MarkPaidOutcome.Paid
+
+            // Nothing anywhere on the schedule says "income": the entry's direction is read from the
+            // category it is filed under, which is what lets a schedule be either without a second
+            // column to disagree with the category.
+            val transaction = transactionRepository.getById(paid.transactionId)!!
+            assertEquals(TransactionType.INCOME, transaction.type)
+            assertEquals(categoryId, transaction.categoryId)
+            assertEquals(4_500_000L, transaction.amountPaise)
+        }
+    }
+
+    @Test
+    fun aUnitPriceIsStoredOnTheScheduleAndNeverCopiedOntoTheEntry() {
+        runBlocking {
+            val categoryId = expenseCategory(name = "Milk")
+            val scheduleId = createSchedule(
+                categoryId = categoryId,
+                name = "Milk",
+                amountPaise = 6_000L,
+                unit = "litre",
+                ratePaise = 6_000L,
+                startDate = today.minusMonths(1),
+            )
+            val occurrence = recurringRepository.observeOccurrences(scheduleId).first()
+                .minByOrNull { it.dueDate }!!
+
+            // The plan keeps the price of one unit, because that is what the household told it.
+            val stored = recurringRepository.observeSchedule(scheduleId).first()!!
+            assertEquals("litre", stored.unit)
+            assertEquals(6_000L, stored.ratePaise)
+
+            val paid = recurringRepository.markOccurrencePaid(
+                occurrenceId = occurrence.id,
+                amountPaise = occurrence.amountPaise,
+                now = now,
+            ) as MarkPaidOutcome.Paid
+
+            // The entry does not: one rate with no quantity beside it would be half of a sum that does
+            // not multiply out, and the ledger's own rule is that quantity and rate are a pair.
+            val transaction = transactionRepository.getById(paid.transactionId)!!
+            assertEquals(6_000L, transaction.amountPaise)
+            assertNull(transaction.quantityThousandths)
+            assertNull(transaction.ratePaise)
+        }
+    }
+
+    @Test
     fun theAmountPaidMayDifferFromWhatWasExpected() {
         runBlocking {
             val categoryId = expenseCategory()
@@ -862,14 +926,49 @@ class RecurringRepositoryDatabaseIntegrationTest {
     // --------------------------------------------------------- creation rules
 
     @Test
-    fun anIncomeCategoryCannotBeTheCategoryOfAnExpenseSchedule() {
+    fun anIncomeCategoryIsAllowedAndItsPaymentsAreFiledAsIncome() {
         runBlocking {
-            val incomeCategoryId = categoryRepository.create("Bonus", TransactionType.INCOME)
+            val incomeCategoryId = incomeCategory("Salary")
 
-            assertThrows(IllegalArgumentException::class.java) {
-                runBlocking { createSchedule(incomeCategoryId, startDate = today) }
-            }
-            assertEquals(0, recurringRepository.observeSchedules().first().size)
+            // A schedule is a plan, not an expense: rent comes round and so does a salary, and the
+            // direction is the *category's* own type rather than a property of the schedule.
+            val scheduleId = createSchedule(
+                incomeCategoryId,
+                name = "Salary",
+                startDate = today.minusMonths(1),
+            )
+            val occurrence = recurringRepository.observeOccurrences(scheduleId).first()
+                .minByOrNull { it.dueDate }!!
+
+            assertTrue(
+                recurringRepository.markOccurrencePaid(occurrence.id, occurrence.amountPaise, now)
+                    is MarkPaidOutcome.Paid,
+            )
+
+            // The entry the payment wrote carries the category's direction, not a default: an income
+            // schedule that quietly recorded an expense would corrupt every total built on top of it.
+            val entry = database.transactionDao().observeAll().first().single()
+            assertEquals(TransactionType.INCOME, entry.type)
+            assertEquals(incomeCategoryId, entry.categoryId)
+        }
+    }
+
+    @Test
+    fun anExpenseCategoryIsAllowedTooBecauseTheCategoryDecidesTheDirection() {
+        runBlocking {
+            val categoryId = expenseCategory()
+
+            val scheduleId = createSchedule(categoryId, startDate = today.minusMonths(1))
+            val occurrence = recurringRepository.observeOccurrences(scheduleId).first()
+                .minByOrNull { it.dueDate }!!
+
+            assertTrue(
+                recurringRepository.markOccurrencePaid(occurrence.id, occurrence.amountPaise, now)
+                    is MarkPaidOutcome.Paid,
+            )
+
+            val entry = database.transactionDao().observeAll().first().single()
+            assertEquals(TransactionType.EXPENSE, entry.type)
         }
     }
 
@@ -1008,11 +1107,16 @@ class RecurringRepositoryDatabaseIntegrationTest {
     private suspend fun expenseCategory(name: String = "Rent"): Long =
         categoryRepository.create(name, TransactionType.EXPENSE)
 
+    private suspend fun incomeCategory(name: String = "Salary"): Long =
+        categoryRepository.create(name, TransactionType.INCOME)
+
     private suspend fun createSchedule(
         categoryId: Long,
         name: String = "Shop rent",
         description: String? = null,
         amountPaise: Long = 1_500_000L,
+        unit: String? = null,
+        ratePaise: Long? = null,
         frequency: RecurrenceFrequency = RecurrenceFrequency.MONTHLY,
         intervalCount: Int = 1,
         startDate: LocalDate,
@@ -1027,6 +1131,8 @@ class RecurringRepositoryDatabaseIntegrationTest {
         endDate = endDate,
         today = today,
         description = description,
+        unit = unit,
+        ratePaise = ratePaise,
         now = now,
     )
 

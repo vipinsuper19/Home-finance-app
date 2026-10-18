@@ -38,6 +38,21 @@ interface CategoryDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(category: CategoryEntity): Long
 
+    /**
+     * Inserts several categories at once, **ignoring** any whose `(type, name)` is already taken.
+     *
+     * This is the same unique index as [insert], read the other way round, and it exists for exactly
+     * one caller: seeding the categories the app ships with. That caller must never fail because the
+     * household already wrote a "Milk" of their own, and it must never overwrite one either - so the
+     * name that is already there wins and the row the household wrote keeps its own values.
+     *
+     * The returned list has one entry per input, in order: the new row's `id`, or `-1` where that
+     * category was already present. A caller can therefore count what it actually created without a
+     * second read.
+     */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnoring(categories: List<CategoryEntity>): List<Long>
+
     /** Replaces the stored row with the same `id`. */
     @Update
     suspend fun update(category: CategoryEntity)

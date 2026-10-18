@@ -265,7 +265,7 @@ private fun CategoryRow(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CategoryMark(categoryName = option.name, type = type)
+        CategoryMark(iconKey = option.iconKey, categoryName = option.name, type = type)
 
         Spacer(modifier = Modifier.width(16.dp))
 

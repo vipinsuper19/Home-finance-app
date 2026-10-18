@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasProgressBarRangeInfo
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -23,6 +24,7 @@ import com.homefinance.app.core.ui.theme.HomeFinanceTheme
 import com.homefinance.app.core.util.DateFormatter
 import com.homefinance.app.core.util.MoneyParseResult
 import com.homefinance.app.data.model.RecurrenceFrequency
+import com.homefinance.app.data.model.TransactionType
 import com.homefinance.app.feature.addtransaction.CategoriesUiState
 import com.homefinance.app.feature.addtransaction.CategoryOption
 import com.homefinance.app.feature.addtransaction.EditLoadState
@@ -63,17 +65,113 @@ class RecurringFormScreenTest {
     fun everyFieldAScheduleIsMadeOfIsOnTheForm() {
         render()
 
+        composeTestRule.onNodeWithText(text(R.string.add_transaction_type_expense)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.add_transaction_type_income)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.recurring_form_name_label)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.recurring_form_description_label)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.add_transaction_category_label)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.recurring_form_amount_label)).assertIsDisplayed()
-        composeTestRule.onNodeWithText(text(R.string.recurring_form_frequency_label)).assertIsDisplayed()
-        composeTestRule.onNodeWithText(text(R.string.recurring_start_label)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.recurring_form_unit_rate_switch))
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.recurring_form_frequency_label))
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.recurring_start_label))
+            .performScrollTo()
+            .assertIsDisplayed()
         // The form is taller than a phone, and the fields scroll under a pinned action button, so the
         // ones at the foot have to be scrolled to on the way to being asserted.
         composeTestRule.onNodeWithText(text(R.string.recurring_end_optional_label))
             .performScrollTo()
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun theUnitPriceFieldsAreHiddenUntilTheyAreAskedFor() {
+        render(RecurringFormUiState(startDate = today))
+
+        // Off is the ordinary case - most schedules are not priced by unit - so the form does not open
+        // with two fields most households will never fill in.
+        composeTestRule.onNodeWithText(text(R.string.recurring_form_unit_label)).assertDoesNotExist()
+        composeTestRule.onNodeWithText(text(R.string.recurring_form_rate_label)).assertDoesNotExist()
+    }
+
+    @Test
+    fun turningTheUnitPriceOnRevealsBothOfItsFields() {
+        render(RecurringFormUiState(startDate = today, useUnitAndRate = true))
+
+        composeTestRule.onNodeWithText(text(R.string.recurring_form_unit_label))
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.recurring_form_rate_label))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun turningTheUnitPriceOnReportsIt() {
+        val toggled = AtomicReference<Boolean>()
+
+        render(onUnitRateToggle = { toggled.set(it) })
+
+        // The switch itself, not its label: the label is a plain `Text` beside it, and the only
+        // toggleable control on this form is the unit-price switch.
+        composeTestRule.onNode(isToggleable()).performClick()
+
+        assertEquals(true, toggled.get())
+    }
+
+    @Test
+    fun aRefusedUnitIsSaidBesideTheUnit() {
+        render(
+            RecurringFormUiState(
+                startDate = today,
+                useUnitAndRate = true,
+                showUnitError = true,
+            ),
+        )
+
+        composeTestRule.onNodeWithText(text(R.string.recurring_form_unit_error))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun aRefusedRateIsSaidBesideTheRateAndNotAsAnAmount() {
+        render(
+            RecurringFormUiState(
+                startDate = today,
+                useUnitAndRate = true,
+                unitInput = "litre",
+                rateError = MoneyParseResult.Problem.Blank,
+            ),
+        )
+
+        // The rate's own wording, not the amount's: "enter an amount" would point at the wrong field,
+        // because this form has an amount field too and it is already filled in.
+        composeTestRule.onNodeWithText(text(R.string.add_transaction_rate_error_blank))
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun theChosenDirectionIsTheSelectedPill() {
+        render(RecurringFormUiState(startDate = today, type = TransactionType.INCOME))
+
+        composeTestRule.onNodeWithText(text(R.string.add_transaction_type_income)).assertIsSelected()
+        composeTestRule.onNodeWithText(text(R.string.add_transaction_type_expense)).assertIsDisplayed()
+    }
+
+    @Test
+    fun choosingIncomeReportsIt() {
+        val chosen = AtomicReference<TransactionType>()
+
+        render(onTypeChange = { chosen.set(it) })
+
+        composeTestRule.onNodeWithText(text(R.string.add_transaction_type_income)).performClick()
+
+        assertEquals(TransactionType.INCOME, chosen.get())
     }
 
     @Test
@@ -101,21 +199,24 @@ class RecurringFormScreenTest {
         val start = LocalDate.of(2026, 11, 5)
         render(RecurringFormUiState(startDate = start))
 
-        composeTestRule.onNodeWithText(DateFormatter.format(start)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(DateFormatter.format(start)).performScrollTo().assertIsDisplayed()
     }
 
     @Test
     fun theStartDateFieldOpensTheDatePicker() {
         render()
 
-        composeTestRule.onNodeWithContentDescription(text(R.string.recurring_start_label)).performClick()
+        composeTestRule
+            .onNodeWithContentDescription(text(R.string.recurring_start_label))
+            .performScrollTo()
+            .performClick()
 
         composeTestRule.onNodeWithText(text(R.string.action_ok)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.action_cancel)).assertIsDisplayed()
     }
 
     @Test
-    fun anUnsetLastOccurrenceSaysItRunsUntilPausedAndOffersNoClear() {
+    fun anUnsetLastOccurrenceSaysThereIsNoEndDateAndOffersNoClear() {
         render(RecurringFormUiState(startDate = today, endDate = null))
 
         composeTestRule.onNodeWithText(text(R.string.recurring_end_none))
@@ -452,7 +553,11 @@ class RecurringFormScreenTest {
         onBack: () -> Unit = {},
         onNameChange: (String) -> Unit = {},
         onDescriptionChange: (String) -> Unit = {},
+        onTypeChange: (TransactionType) -> Unit = {},
         onAmountChange: (String) -> Unit = {},
+        onUnitRateToggle: (Boolean) -> Unit = {},
+        onUnitChange: (String) -> Unit = {},
+        onRateChange: (String) -> Unit = {},
         onPickCategory: () -> Unit = {},
         onFrequencyChange: (RecurrenceFrequency) -> Unit = {},
         onIntervalChange: (String) -> Unit = {},
@@ -476,7 +581,14 @@ class RecurringFormScreenTest {
                         onDescriptionChange(it)
                         live = live.copy(description = it)
                     },
+                    onTypeChange = { onTypeChange(it); live = live.copy(type = it, category = null) },
                     onAmountChange = { onAmountChange(it); live = live.copy(amountInput = it) },
+                    onUnitRateToggle = {
+                        onUnitRateToggle(it)
+                        live = live.copy(useUnitAndRate = it)
+                    },
+                    onUnitChange = { onUnitChange(it); live = live.copy(unitInput = it) },
+                    onRateChange = { onRateChange(it); live = live.copy(rateInput = it) },
                     onPickCategory = onPickCategory,
                     onFrequencyChange = { onFrequencyChange(it); live = live.copy(frequency = it) },
                     onIntervalChange = { onIntervalChange(it); live = live.copy(intervalInput = it) },

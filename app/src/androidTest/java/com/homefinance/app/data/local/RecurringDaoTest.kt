@@ -292,6 +292,37 @@ class RecurringDaoTest {
         }
     }
 
+    @Test
+    fun theListProjectionCarriesTheSchedulesUnitPriceAndTheCategorysDirection() {
+        runBlocking {
+            val categoryId = insertCategory(name = "Milk", type = TransactionType.INCOME)
+            insertSchedule(name = "Milk round", categoryId = categoryId, unit = "litre", ratePaise = 6_000L)
+
+            val stored = recurringDao.observeSchedulesWithProgress().first().single()
+
+            // The unit price is the schedule's own column...
+            assertEquals("litre", stored.unit)
+            assertEquals(6_000L, stored.ratePaise)
+            // ...and the direction is *not* a column at all: it is read from the joined category, which
+            // is why an income schedule cannot be drawn as an expense one.
+            assertEquals(TransactionType.INCOME, stored.categoryType)
+        }
+    }
+
+    @Test
+    fun aScheduleWhoseHouseholdNeverGaveAUnitPriceProjectsNothingForIt() {
+        runBlocking {
+            insertSchedule()
+
+            val stored = recurringDao.observeSchedulesWithProgress().first().single()
+
+            // NULL, not a zero rate: "no unit price" and "free" are different facts, and a zero would
+            // print as a price beside the schedule.
+            assertNull(stored.unit)
+            assertNull(stored.ratePaise)
+        }
+    }
+
     // ------------------------------------------------------------------ flows
 
     @Test
@@ -519,11 +550,15 @@ class RecurringDaoTest {
         name: String = "Shop rent",
         categoryId: Long? = null,
         status: RecurringScheduleStatus = RecurringScheduleStatus.ACTIVE,
+        unit: String? = null,
+        ratePaise: Long? = null,
     ): Long = recurringDao.insertSchedule(
         schedule(
             categoryId = categoryId ?: insertCategory(),
             name = name,
             status = status,
+            unit = unit,
+            ratePaise = ratePaise,
         ),
     )
 

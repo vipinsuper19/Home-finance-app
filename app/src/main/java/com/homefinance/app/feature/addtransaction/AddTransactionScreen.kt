@@ -342,9 +342,13 @@ private fun AddTransactionUiState.amountFieldText(): String =
  *
  * The pills are `selectable` within a `selectableGroup` rather than a plain row of clickable boxes:
  * that is what tells a screen reader this is one choice with two options instead of two buttons.
+ *
+ * Shared with the recurring form rather than copied: a schedule's direction is the same choice with
+ * the same two words and the same two colours, and a second copy would be a second place for the two
+ * screens to disagree about which is which.
  */
 @Composable
-private fun TypeSelector(
+internal fun TypeSelector(
     selected: TransactionType,
     onTypeChange: (TransactionType) -> Unit,
     modifier: Modifier = Modifier,
@@ -416,9 +420,13 @@ private fun TypePill(
  * The error is shown under the field, in place, instead of in a snackbar that could be missed.
  * [derived] only changes where the value comes from and whether it can be edited; the field, and
  * therefore the thing the household is looking at, is the same either way.
+ *
+ * Shared with the recurring payment sheet rather than copied: recording that a standing order was paid
+ * is recording an amount, and a second field would be a second place for the two screens to disagree
+ * about what a rejected figure says.
  */
 @Composable
-private fun AmountField(
+internal fun AmountField(
     value: String,
     derived: Boolean,
     error: String?,
@@ -512,7 +520,11 @@ internal fun CategoryField(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (category != null) {
-                    CategoryMark(categoryName = category.name, type = type)
+                    CategoryMark(
+                        iconKey = category.iconKey,
+                        categoryName = category.name,
+                        type = type,
+                    )
                     Spacer(modifier = Modifier.width(12.dp))
                 }
 

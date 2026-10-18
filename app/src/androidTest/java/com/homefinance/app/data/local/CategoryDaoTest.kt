@@ -201,4 +201,98 @@ class CategoryDaoTest {
             assertFalse(stored.isActive)
         }
     }
+
+    // ------------------------------------------------- inserting without conflict
+
+    /**
+     * The half of the unique index the category seeder depends on, asserted against the real index
+     * rather than against a fake's idea of it.
+     *
+     * [CategoryDao.insertIgnoring] must never fail because a name is taken - a household that
+     * already wrote a "Milk" of their own must not stop the app writing the other eleven - and it
+     * must never overwrite one either. Both halves are checked here.
+     */
+    @Test
+    fun insertIgnoringWritesEveryRowWhenNoNameIsTaken() {
+        runBlocking {
+            val ids = categoryDao.insertIgnoring(
+                listOf(
+                    category("Milk", TransactionType.EXPENSE, iconKey = "milk"),
+                    category("Salary", TransactionType.INCOME, iconKey = "salary"),
+                ),
+            )
+
+            assertTrue(ids.all { it != -1L })
+            assertEquals(2, categoryDao.observeAll().first().size)
+            // The mark travels through a real insert, not only through the fake.
+            assertEquals("milk", categoryDao.getById(ids.first())!!.iconKey)
+        }
+    }
+
+    @Test
+    fun insertIgnoringLeavesAnExistingRowExactlyAsItWas() {
+        runBlocking {
+            val theirs = categoryDao.insert(
+                category("Groceries", TransactionType.EXPENSE, isActive = false, iconKey = null),
+            )
+            val before = categoryDao.getById(theirs)!!
+
+            val ids = categoryDao.insertIgnoring(
+                listOf(
+                    category("Groceries", TransactionType.EXPENSE, iconKey = "groceries"),
+                    category("Milk", TransactionType.EXPENSE, iconKey = "milk"),
+                ),
+            )
+
+            // -1 for the one that was already there, a real id for the one that was not.
+            assertEquals(-1L, ids.first())
+            assertTrue(ids[1] != -1L)
+
+            // Not re-marked, not re-activated, not renamed: the household's row is the one that
+            // survives and the shipped one is the one that is dropped.
+            assertEquals(before, categoryDao.getById(theirs))
+            assertEquals(2, categoryDao.observeAll().first().size)
+        }
+    }
+
+    @Test
+    fun insertIgnoringTreatsADifferentlyCasedNameAsAlreadyTaken() {
+        runBlocking {
+            categoryDao.insert(category("Groceries", TransactionType.EXPENSE))
+
+            val ids = categoryDao.insertIgnoring(
+                listOf(category("groceries", TransactionType.EXPENSE)),
+            )
+
+            assertEquals(listOf(-1L), ids)
+            assertEquals(listOf("Groceries"), categoryDao.observeAll().first().map { it.name })
+        }
+    }
+
+    @Test
+    fun insertIgnoringStillAllowsTheSameNameForTheOtherType() {
+        runBlocking {
+            categoryDao.insert(category("Salary", TransactionType.INCOME))
+
+            val ids = categoryDao.insertIgnoring(
+                listOf(category("Salary", TransactionType.EXPENSE)),
+            )
+
+            assertTrue(ids.single() != -1L)
+            assertEquals(2, categoryDao.observeAll().first().size)
+        }
+    }
+
+    @Test
+    fun insertIgnoringDoesNotThrowWhereInsertWould() {
+        runBlocking {
+            categoryDao.insert(category("Milk", TransactionType.EXPENSE))
+
+            // `insert` would raise SQLiteConstraintException here - which is exactly the failure the
+            // seeder must not be able to hit on a device that already has a "Milk".
+            categoryDao.insertIgnoring(listOf(category("Milk", TransactionType.EXPENSE)))
+
+            assertEquals(1, categoryDao.observeAll().first().size)
+        }
+    }
 }

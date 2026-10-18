@@ -25,8 +25,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Backs the Recurring tab: the household's schedules, and the three things they can do to one from
- * here - pause it, resume it, or stop it for good.
+ * Backs the Recurring tab: the household's schedules, the filter that decides which of them are on
+ * screen, and the three things they can do to one from here - pause it, resume it, or stop it for good.
+ *
+ * ### The filter is a view, not a query
+ *
+ * [onFilterChange] narrows the drawn rows by their category's own type and writes nothing. The rows
+ * come from one query either way, so switching between "All", "Expense" and "Income" cannot miss a
+ * schedule or show one twice, and cannot put the screen back through its loading state.
  *
  * ### The generation trigger lives here
  *
@@ -74,11 +80,22 @@ class RecurringListViewModel(
 
     private val actionError = MutableStateFlow<ActionError?>(null)
 
+    /**
+     * Which direction the household is looking at.
+     *
+     * Held here rather than in the composable so that a configuration change does not silently widen
+     * the list back to "All" - a household reading their income schedules should still be reading
+     * them after a rotation. It is *not* persisted: the tab opens on "All" every time, because the
+     * first thing a household wants is the whole picture.
+     */
+    private val filter = MutableStateFlow(ScheduleTypeFilter.ALL)
+
     val uiState: StateFlow<RecurringListUiState> =
         combine(
             retryRequests.flatMapLatest { observeSchedules() },
             actionError,
-        ) { read, failure -> read.toUiState(failure) }
+            filter,
+        ) { read, failure, filter -> read.toUiState(failure, filter) }
             .stateIn(
                 scope = viewModelScope,
                 // Keeping the subscription alive briefly means switching tabs and coming straight back
@@ -89,6 +106,18 @@ class RecurringListViewModel(
 
     init {
         generateDueOccurrences()
+    }
+
+    /**
+     * Narrows the list to one direction, or widens it back to all of them.
+     *
+     * It changes nothing in the database and writes nothing: the rows are the same rows, filtered
+     * where they are drawn. That is why the same flow can carry it beside the query - a change of
+     * filter does not have to re-read, and must not, because a re-read would be a chance for the list
+     * to flicker back through its loading state on what is only a change of view.
+     */
+    fun onFilterChange(filter: ScheduleTypeFilter) {
+        this.filter.value = filter
     }
 
     /** Starts over: re-reads the schedules, and tries the generation the failed read suggests failed too. */
@@ -163,13 +192,25 @@ class RecurringListViewModel(
             .onStart { emit(SchedulesRead.Loading) }
             .catch { failure -> emit(SchedulesRead.Failed(failure)) }
 
-    private fun SchedulesRead.toUiState(failure: ActionError?): RecurringListUiState = when (this) {
+    private fun SchedulesRead.toUiState(
+        failure: ActionError?,
+        filter: ScheduleTypeFilter,
+    ): RecurringListUiState = when (this) {
         SchedulesRead.Loading -> RecurringListUiState.Loading
         is SchedulesRead.Failed -> RecurringListUiState.Failed(cause)
-        is SchedulesRead.Rows -> RecurringListUiState.Ready(
-            schedules = rows.map { it.toCard(today) },
-            actionError = failure,
-        )
+        is SchedulesRead.Rows -> {
+            val cards = rows.map { it.toCard(today) }
+
+            RecurringListUiState.Ready(
+                schedules = cards.filter { filter.matches(it.categoryType) },
+                filter = filter,
+                // Read from the *unfiltered* cards: whether the household has any schedules at all is
+                // a different question from whether the filter they chose happened to match one, and
+                // the two empty screens say different things.
+                hasAnySchedule = cards.isNotEmpty(),
+                actionError = failure,
+            )
+        }
     }
 
     /** The schedule read, in the three shapes the screen needs. */

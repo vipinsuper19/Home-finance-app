@@ -14,6 +14,7 @@ import com.homefinance.app.R
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
 import com.homefinance.app.core.util.CurrencyFormatter
 import com.homefinance.app.core.util.DateFormatter
+import com.homefinance.app.data.model.TransactionType
 import java.io.IOException
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicLong
@@ -109,7 +110,7 @@ class RecurringOccurrencesScreenTest {
         )
 
         composeTestRule.onNodeWithText(text(R.string.recurring_occurrence_overdue)).assertIsDisplayed()
-        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action)).performClick()
+        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action_paid)).performClick()
 
         assertEquals(5L, paid.get()?.id)
     }
@@ -137,8 +138,26 @@ class RecurringOccurrencesScreenTest {
         // Paying a bill early is normal - the milk is delivered and paid for on the same morning the app
         // expects it the next day - so an upcoming date is not locked out.
         composeTestRule.onNodeWithText(text(R.string.recurring_occurrence_upcoming)).assertIsDisplayed()
-        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action_paid)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.recurring_skip_action)).assertIsDisplayed()
+    }
+
+    @Test
+    fun anIncomeRowOffersToReceiveRatherThanToPay() {
+        render(
+            rows(
+                occurrence(
+                    id = 7L,
+                    state = OccurrenceDisplayState.UPCOMING,
+                    categoryType = TransactionType.INCOME,
+                ),
+            ),
+        )
+
+        // The row is the same shape for both directions, but the verb is not: the money in a salary is
+        // received, and telling a household they have "paid" it would be plainly wrong.
+        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action_received)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action_paid)).assertDoesNotExist()
     }
 
     @Test
@@ -147,7 +166,8 @@ class RecurringOccurrencesScreenTest {
 
         composeTestRule.onNodeWithText(text(R.string.recurring_occurrence_paid)).assertIsDisplayed()
         // Settled means settled: the payment is a fact that happened, and the row is for reading back.
-        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action)).assertDoesNotExist()
+        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action_paid)).assertDoesNotExist()
+        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action_received)).assertDoesNotExist()
         composeTestRule.onNodeWithText(text(R.string.recurring_skip_action)).assertDoesNotExist()
     }
 
@@ -156,7 +176,7 @@ class RecurringOccurrencesScreenTest {
         render(rows(occurrence(id = 9L, state = OccurrenceDisplayState.SKIPPED)))
 
         composeTestRule.onNodeWithText(text(R.string.recurring_occurrence_skipped)).assertIsDisplayed()
-        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action)).assertDoesNotExist()
+        composeTestRule.onNodeWithText(text(R.string.recurring_pay_action_paid)).assertDoesNotExist()
         composeTestRule.onNodeWithText(text(R.string.recurring_skip_action)).assertDoesNotExist()
     }
 
@@ -171,7 +191,7 @@ class RecurringOccurrencesScreenTest {
         )
 
         // One actionable row out of three, and the two chips that say why the other two are not.
-        composeTestRule.onAllNodesWithText(text(R.string.recurring_pay_action)).assertCountEquals(1)
+        composeTestRule.onAllNodesWithText(text(R.string.recurring_pay_action_paid)).assertCountEquals(1)
         composeTestRule.onAllNodesWithText(text(R.string.recurring_skip_action)).assertCountEquals(1)
         composeTestRule.onNodeWithText(text(R.string.recurring_occurrence_paid)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.recurring_occurrence_skipped)).assertIsDisplayed()
@@ -198,20 +218,21 @@ class RecurringOccurrencesScreenTest {
     // so a row whose button did nothing would be the worst failure this screen could have.
 
     @Test
-    fun tappingPayOnARowOpensTheDialogForThatOccurrence() {
+    fun tappingPayOnARowOpensTheSheetForThatOccurrence() {
         render(
             rows(occurrence(id = 5L, state = OccurrenceDisplayState.OVERDUE)),
             pay = PayOccurrenceState(
                 occurrenceId = 5L,
                 scheduleName = "Shop rent",
                 categoryName = "Rent",
+                type = TransactionType.EXPENSE,
                 dueDate = LocalDate.of(2026, 10, 5),
                 expectedAmountPaise = 1_500_000L,
                 amountInput = "15000",
             ),
         )
 
-        composeTestRule.onNodeWithText(text(R.string.recurring_pay_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.recurring_pay_sheet_title_expense)).assertIsDisplayed()
     }
 
     // ------------------------------------------------------------------ fixtures
@@ -223,11 +244,13 @@ class RecurringOccurrencesScreenTest {
         dueDate: LocalDate = LocalDate.of(2026, 10, 5),
         amountPaise: Long = 1_500_000L,
         state: OccurrenceDisplayState = OccurrenceDisplayState.OVERDUE,
+        categoryType: TransactionType = TransactionType.EXPENSE,
         transactionRemoved: Boolean = false,
     ): RecurringOccurrenceItem = RecurringOccurrenceItem(
         id = id,
         scheduleName = "Shop rent",
         categoryName = "Rent",
+        categoryType = categoryType,
         dueDate = dueDate,
         amountPaise = amountPaise,
         state = state,

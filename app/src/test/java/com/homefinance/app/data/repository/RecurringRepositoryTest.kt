@@ -244,22 +244,180 @@ class RecurringRepositoryTest {
     }
 
     @Test
-    fun anIncomeCategoryIsRefused() = runBlocking {
+    fun anIncomeCategoryIsAcceptedAndStored() = runBlocking {
+        val fixture = Fixture()
+
+        val id = fixture.repository.createSchedule(
+            name = "Salary",
+            categoryId = SALARY_ID,
+            amountPaise = 4_500_000L,
+            frequency = MONTHLY,
+            intervalCount = 1,
+            startDate = today,
+            endDate = null,
+            today = today,
+            now = now,
+        )
+
+        val stored = fixture.recurringDao.storedSchedules.single { it.id == id }
+        assertEquals(SALARY_ID, stored.categoryId)
+        assertEquals(4_500_000L, stored.amountPaise)
+        // No transaction, exactly as for an expense schedule: creating an income plan is not income.
+        assertEquals(emptyList<Any>(), fixture.transactionDao.inserted)
+    }
+
+    @Test
+    fun aUnitPriceIsStoredOnTheSchedule() = runBlocking {
+        val fixture = Fixture()
+
+        val id = fixture.repository.createSchedule(
+            name = "Milk",
+            categoryId = RENT_ID,
+            amountPaise = 6_000L,
+            frequency = MONTHLY,
+            intervalCount = 1,
+            startDate = today,
+            endDate = null,
+            today = today,
+            unit = "  litre  ",
+            ratePaise = 6_000L,
+            now = now,
+        )
+
+        val stored = fixture.recurringDao.storedSchedules.single { it.id == id }
+        // Trimmed like the description, and kept separate from the expected amount.
+        assertEquals("litre", stored.unit)
+        assertEquals(6_000L, stored.ratePaise)
+        assertEquals(6_000L, stored.amountPaise)
+    }
+
+    @Test
+    fun aUnitWithoutARateIsRefused() = runBlocking {
         val fixture = Fixture()
 
         assertFails {
             fixture.repository.createSchedule(
-                name = "Salary",
-                categoryId = SALARY_ID,
-                amountPaise = 100L,
+                name = "Milk",
+                categoryId = RENT_ID,
+                amountPaise = 6_000L,
                 frequency = MONTHLY,
                 intervalCount = 1,
                 startDate = today,
                 endDate = null,
                 today = today,
+                unit = "litre",
                 now = now,
             )
         }
+        assertEquals(emptyList<Any>(), fixture.recurringDao.insertedSchedules)
+    }
+
+    @Test
+    fun aRateWithoutAUnitIsRefused() = runBlocking {
+        val fixture = Fixture()
+
+        assertFails {
+            fixture.repository.createSchedule(
+                name = "Milk",
+                categoryId = RENT_ID,
+                amountPaise = 6_000L,
+                frequency = MONTHLY,
+                intervalCount = 1,
+                startDate = today,
+                endDate = null,
+                today = today,
+                ratePaise = 6_000L,
+                now = now,
+            )
+        }
+        assertEquals(emptyList<Any>(), fixture.recurringDao.insertedSchedules)
+    }
+
+    @Test
+    fun aBlankUnitIsTreatedAsNoUnitPriceAtAll() = runBlocking {
+        val fixture = Fixture()
+
+        // A unit that is only spaces has been normalised to `null` before validation, so "no unit with
+        // no rate" is a schedule without a unit price rather than a half-given pair.
+        val id = fixture.repository.createSchedule(
+            name = "Milk",
+            categoryId = RENT_ID,
+            amountPaise = 6_000L,
+            frequency = MONTHLY,
+            intervalCount = 1,
+            startDate = today,
+            endDate = null,
+            today = today,
+            unit = "   ",
+            now = now,
+        )
+
+        val stored = fixture.recurringDao.storedSchedules.single { it.id == id }
+        assertEquals(null, stored.unit)
+        assertEquals(null, stored.ratePaise)
+    }
+
+    @Test
+    fun aRateThatIsNotPositiveIsRefused() = runBlocking {
+        val fixture = Fixture()
+
+        assertFails {
+            fixture.repository.createSchedule(
+                name = "Milk",
+                categoryId = RENT_ID,
+                amountPaise = 6_000L,
+                frequency = MONTHLY,
+                intervalCount = 1,
+                startDate = today,
+                endDate = null,
+                today = today,
+                unit = "litre",
+                ratePaise = 0L,
+                now = now,
+            )
+        }
+        assertEquals(emptyList<Any>(), fixture.recurringDao.insertedSchedules)
+    }
+
+    @Test
+    fun editingCanAddAndRemoveTheUnitPrice() = runBlocking {
+        val fixture = Fixture(initialSchedules = listOf(schedule()))
+
+        fixture.repository.updateSchedule(
+            id = SCHEDULE_ID,
+            name = "Milk",
+            categoryId = RENT_ID,
+            amountPaise = 6_000L,
+            frequency = MONTHLY,
+            intervalCount = 1,
+            startDate = date(2026, 10, 5),
+            endDate = null,
+            today = today,
+            unit = "litre",
+            ratePaise = 6_000L,
+            now = now,
+        )
+
+        assertEquals("litre", fixture.recurringDao.storedSchedules.single().unit)
+        assertEquals(6_000L, fixture.recurringDao.storedSchedules.single().ratePaise)
+
+        fixture.repository.updateSchedule(
+            id = SCHEDULE_ID,
+            name = "Milk",
+            categoryId = RENT_ID,
+            amountPaise = 6_000L,
+            frequency = MONTHLY,
+            intervalCount = 1,
+            startDate = date(2026, 10, 5),
+            endDate = null,
+            today = today,
+            unit = null,
+            ratePaise = null,
+            now = now,
+        )
+
+        assertEquals(null, fixture.recurringDao.storedSchedules.single().unit)
+        assertEquals(null, fixture.recurringDao.storedSchedules.single().ratePaise)
     }
 
     @Test
@@ -647,6 +805,40 @@ class RecurringRepositoryTest {
     }
 
     @Test
+    fun payingAnIncomeSchedulesOccurrenceWritesIncome() = runBlocking {
+        val fixture = Fixture(
+            initialSchedules = listOf(schedule(name = "Salary", categoryId = SALARY_ID, amountPaise = 4_500_000L)),
+            initialOccurrences = listOf(occurrence(id = 1L, dueDate = date(2026, 10, 1), amountPaise = 4_500_000L)),
+        )
+
+        fixture.repository.markOccurrencePaid(1L, 4_500_000L, now)
+
+        // The direction is read from the category the schedule is filed under, not passed in and not
+        // stored twice: an income schedule produces income.
+        val transaction = fixture.transactionDao.inserted.single()
+        assertEquals(TransactionType.INCOME, transaction.type)
+        assertEquals(SALARY_ID, transaction.categoryId)
+        assertEquals(4_500_000L, transaction.amountPaise)
+    }
+
+    @Test
+    fun theUnitPriceIsNotCarriedIntoTheEntry() = runBlocking {
+        val fixture = Fixture(
+            initialSchedules = listOf(schedule(unit = "litre", ratePaise = 6_000L, amountPaise = 6_000L)),
+            initialOccurrences = listOf(occurrence(id = 1L, dueDate = date(2026, 10, 5), amountPaise = 6_000L)),
+        )
+
+        fixture.repository.markOccurrencePaid(1L, 6_000L, now)
+
+        // The plan's price for one unit is not what was bought: copying it onto the entry without the
+        // quantity that made the amount would store two figures that do not multiply out.
+        val transaction = fixture.transactionDao.inserted.single()
+        assertEquals(6_000L, transaction.amountPaise)
+        assertEquals(null, transaction.quantityThousandths)
+        assertEquals(null, transaction.ratePaise)
+    }
+
+    @Test
     fun payingCanRecordADifferentAmountFromTheOneExpected() = runBlocking {
         val fixture = Fixture(
             initialSchedules = listOf(schedule()),
@@ -741,6 +933,8 @@ class RecurringRepositoryTest {
         description: String? = null,
         categoryId: Long = RENT_ID,
         amountPaise: Long = 1_500_000L,
+        unit: String? = null,
+        ratePaise: Long? = null,
         frequency: RecurrenceFrequency = RecurrenceFrequency.MONTHLY,
         interval: Int = 1,
         startDate: LocalDate = date(2026, 10, 5),
@@ -753,6 +947,8 @@ class RecurringRepositoryTest {
         description = description,
         categoryId = categoryId,
         amountPaise = amountPaise,
+        unit = unit,
+        ratePaise = ratePaise,
         frequency = frequency,
         intervalCount = interval,
         startDate = startDate,
@@ -796,6 +992,8 @@ class RecurringRepositoryTest {
 
         private val names: Map<Long, String> = categories.associate { it.id to it.name }
 
+        private val types: Map<Long, TransactionType> = categories.associate { it.id to it.type }
+
         val categoryDao = FakeCategoryDao(categories)
 
         val transactionDao = FakeTransactionDao(categoryNames = names)
@@ -804,6 +1002,7 @@ class RecurringRepositoryTest {
             categoryNames = names,
             initialSchedules = initialSchedules,
             initialOccurrences = initialOccurrences,
+            categoryTypes = types,
         )
 
         private val categoryRepository = CategoryRepository(categoryDao)

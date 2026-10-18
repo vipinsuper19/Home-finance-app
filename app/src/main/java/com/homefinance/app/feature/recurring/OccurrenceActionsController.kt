@@ -6,6 +6,7 @@ import com.homefinance.app.core.util.MoneyParseResult
 import com.homefinance.app.data.repository.MarkPaidOutcome
 import com.homefinance.app.data.repository.RecurringRepository
 import com.homefinance.app.data.repository.SkipOutcome
+import com.homefinance.app.data.model.TransactionType
 import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.CancellationException
@@ -22,30 +23,30 @@ import kotlinx.coroutines.flow.asStateFlow
  * Both the schedule's details screen and the occurrence history offer the same two actions on the same
  * rows, and neither owns the flow: the repository does. Keeping the machine here means the two screens
  * cannot disagree about what "already paid" means, and the whole thing - validation, the guard against
- * a second tap, and the translation of the repository's outcome into what the dialog shows - is
+ * a second tap, and the translation of the repository's outcome into what the sheet shows - is
  * testable without a screen, a database or a navigation graph.
  *
  * ### What it deliberately does not do
  *
  * It does not create anything itself: both actions go through
  * [RecurringRepository.markOccurrencePaid] and [RecurringRepository.skipOccurrence], which are the
- * gates that own the rules - a positive amount, an expense category, exactly one ledger entry per
+ * gates that own the rules - a positive amount, a category that exists, exactly one ledger entry per
  * occurrence, and a conditional `UPDATE` that makes a second attempt change nothing. Nothing here can
- * add an expense by mistake, because nothing here writes a transaction at all.
+ * add a transaction by mistake, because nothing here writes one at all.
  *
- * It also does not report success. When a payment lands, the dialog closes and the state is left
+ * It also does not report success. When a payment lands, the sheet closes and the state is left
  * `null`: the schedule and occurrence rows the household is looking at are database `Flow`s, so they
- * have already re-emitted with the new figures by the time the dialog is gone. There is no result to
+ * have already re-emitted with the new figures by the time the sheet is gone. There is no result to
  * hand back and no stale list to refresh.
  *
  * ### Why the amount is editable, and why that is not the expected amount
  *
- * A bill whose price changed since it was scheduled is the normal case, so the dialog starts at the
+ * A bill whose price changed since it was scheduled is the normal case, so the sheet starts at the
  * occurrence's **expected** amount - the figure the schedule committed to on that date - and lets the
- * household correct it to what was actually paid. The two are labelled differently on screen for
- * exactly that reason, and the corrected figure goes through the same exact parser the ledger's own
- * form uses. The occurrence keeps its expected amount either way; only the transaction records what
- * was really paid.
+ * household correct it to what was actually paid. The two are shown as two separate facts for exactly
+ * that reason, and the corrected figure goes through the same exact parser the ledger's own form uses.
+ * The occurrence keeps its expected amount either way; only the transaction records what was really
+ * paid.
  *
  * @param instant the clock used for the audit stamps, injectable so a test can pin it.
  */
@@ -58,17 +59,17 @@ class OccurrenceActionsController(
 
     private val skipState = MutableStateFlow<SkipOccurrenceState?>(null)
 
-    /** The open "mark as paid" dialog, or `null` when it is closed. */
+    /** The open payment sheet, or `null` when it is closed. */
     val pay: StateFlow<PayOccurrenceState?> = payState.asStateFlow()
 
     /** The open "skip this occurrence" dialog, or `null` when it is closed. */
     val skip: StateFlow<SkipOccurrenceState?> = skipState.asStateFlow()
 
     /**
-     * Opens the payment dialog for [target], with the amount field already holding what the schedule
+     * Opens the payment sheet for [target], with the amount field already holding what the schedule
      * expected.
      *
-     * Opening a dialog is all this does. Nothing is written until [confirmPay] is called, so looking at
+     * Opening a sheet is all this does. Nothing is written until [confirmPay] is called, so looking at
      * the amount an occurrence was expected to be worth can never cost the household a ledger entry.
      */
     fun requestPay(target: OccurrenceToSettle) {
@@ -76,6 +77,8 @@ class OccurrenceActionsController(
             occurrenceId = target.occurrenceId,
             scheduleName = target.scheduleName,
             categoryName = target.categoryName,
+            type = target.type,
+            categoryIconKey = target.categoryIconKey,
             dueDate = target.dueDate,
             expectedAmountPaise = target.amountPaise,
             amountInput = MoneyInput.toEditableText(target.amountPaise),
@@ -97,7 +100,7 @@ class OccurrenceActionsController(
      * the second payment anyway, but not writing a second ledger entry in the first place is better
      * than writing one and rolling it back.
      *
-     * A failure never closes the dialog and never clears the typed figure: the household has just told
+     * A failure never closes the sheet and never clears the typed figure: the household has just told
      * the app something and the app has to answer them about it.
      */
     suspend fun confirmPay() {
@@ -107,7 +110,7 @@ class OccurrenceActionsController(
         val paise = when (val parsed = MoneyInput.parseRupeesToPaise(current.amountInput)) {
             is MoneyParseResult.Success -> parsed.paise
             is MoneyParseResult.Problem -> {
-                // No write, and the dialog stays exactly where it is.
+                // No write, and the sheet stays exactly where it is.
                 payState.value = current.copy(amountError = parsed, failure = null)
                 return
             }
@@ -142,10 +145,10 @@ class OccurrenceActionsController(
         }
     }
 
-    /** Closes the payment dialog without writing anything. */
+    /** Closes the payment sheet without writing anything. */
     fun dismissPay() {
-        // Refused while a write is in flight: the repository may already have inserted the expense, and
-        // closing the dialog would hide the outcome that is about to arrive.
+        // Refused while a write is in flight: the repository may already have inserted the entry, and
+        // closing the sheet would hide the outcome that is about to arrive.
         if (payState.value?.isSaving == true) return
         payState.value = null
     }
@@ -205,13 +208,17 @@ class OccurrenceActionsController(
  * One occurrence, reduced to everything either settle flow needs to describe it.
  *
  * Both flows show the schedule's name, its category, its due date and what it expected, so the pair is
- * carried together rather than looked up again on a worker thread while a dialog is already open.
+ * carried together rather than looked up again on a worker thread while the flow is already open.
  */
 @Immutable
 data class OccurrenceToSettle(
     val occurrenceId: Long,
     val scheduleName: String,
     val categoryName: String,
+    /** The category's type: the direction of the entry a payment will write. */
+    val type: TransactionType,
+    /** The category's stored mark, or `null` when nobody chose one. Drawn on the sheet's card. */
+    val categoryIconKey: String? = null,
     val dueDate: LocalDate,
     val amountPaise: Long,
 )
@@ -221,14 +228,23 @@ internal fun RecurringOccurrenceItem.toSettleTarget(): OccurrenceToSettle = Occu
     occurrenceId = id,
     scheduleName = scheduleName,
     categoryName = categoryName,
+    type = categoryType,
+    categoryIconKey = categoryIconKey,
     dueDate = dueDate,
     amountPaise = amountPaise,
 )
 
 /**
- * The open "mark as paid" dialog.
+ * The open "mark as paid" sheet.
  *
- * @param expectedAmountPaise what the occurrence was scheduled for, kept so the dialog can name both
+ * It carries the *facts the entry will be written with* as well as the field the household edits: the
+ * schedule it belongs to, its category, which way the money moves, the due date and what was expected.
+ * All of them are read from the occurrence the sheet was opened on rather than looked up again, so the
+ * sheet cannot describe one payment and settle another.
+ *
+ * @param type the category's own type, so the sheet's wording and colour agree with the entry the write
+ *   will produce, which re-reads the same category.
+ * @param expectedAmountPaise what the occurrence was scheduled for, kept so the sheet can name both
  *   figures and say which is which.
  * @param amountInput exactly what the household typed, unformatted, so the field never fights the user
  *   by rewriting their digits mid-keystroke.
@@ -242,6 +258,10 @@ data class PayOccurrenceState(
     val occurrenceId: Long,
     val scheduleName: String,
     val categoryName: String,
+    /** The category's type: the direction of the entry that will be written when this confirms. */
+    val type: TransactionType,
+    /** The category's stored mark, or `null` when nobody chose one. Drawn on the sheet's card. */
+    val categoryIconKey: String? = null,
     val dueDate: LocalDate,
     val expectedAmountPaise: Long,
     val amountInput: String = "",
@@ -260,7 +280,7 @@ data class SkipOccurrenceState(
     val failure: SettleFailure? = null,
 )
 
-/** What went wrong when an occurrence was being settled, in the three shapes the dialogs draw. */
+/** What went wrong when an occurrence was being settled, in the three shapes the settle flows draw. */
 @Immutable
 sealed interface SettleFailure {
 
@@ -270,7 +290,7 @@ sealed interface SettleFailure {
     /**
      * It was already paid or skipped - most likely by the household's own earlier tap.
      *
-     * Reported rather than swallowed, because the alternative is a dialog that appears to have done
+     * Reported rather than swallowed, because the alternative is a sheet that appears to have done
      * something when in fact the payment was recorded at some other moment.
      */
     data object AlreadySettled : SettleFailure

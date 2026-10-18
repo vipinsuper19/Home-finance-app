@@ -69,7 +69,8 @@ interface TransactionDao {
                t.transaction_date     AS transaction_date,
                t.created_at           AS created_at,
                t.updated_at           AS updated_at,
-               c.name                 AS category_name
+               c.name                 AS category_name,
+               c.icon_key             AS category_icon_key
         FROM transactions AS t
         INNER JOIN categories AS c ON c.id = t.category_id
         ORDER BY t.transaction_date DESC, t.id DESC
@@ -103,7 +104,8 @@ interface TransactionDao {
                t.transaction_date     AS transaction_date,
                t.created_at           AS created_at,
                t.updated_at           AS updated_at,
-               c.name                 AS category_name
+               c.name                 AS category_name,
+               c.icon_key             AS category_icon_key
         FROM transactions AS t
         INNER JOIN categories AS c ON c.id = t.category_id
         WHERE t.id = :id

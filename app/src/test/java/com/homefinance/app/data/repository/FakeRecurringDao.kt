@@ -7,6 +7,7 @@ import com.homefinance.app.data.local.relation.RecurringOccurrenceDetail
 import com.homefinance.app.data.local.relation.RecurringScheduleWithProgress
 import com.homefinance.app.data.model.RecurringOccurrenceStatus
 import com.homefinance.app.data.model.RecurringScheduleStatus
+import com.homefinance.app.data.model.TransactionType
 import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
@@ -39,6 +40,22 @@ class FakeRecurringDao(
     private val categoryNames: Map<Long, String> = emptyMap(),
     initialSchedules: List<RecurringScheduleEntity> = emptyList(),
     initialOccurrences: List<RecurringOccurrenceEntity> = emptyList(),
+    /**
+     * The marks of those categories, standing in for `categories.icon_key`. Absent means "nobody
+     * chose one", which is `null` in the projections - the same thing the real join returns for a
+     * category with no stored key.
+     */
+    private val categoryIconKeys: Map<Long, String> = emptyMap(),
+    /**
+     * The types of those categories, standing in for `categories.type` - which is where a schedule's
+     * direction comes from in the real query.
+     *
+     * Absent means a plain expense category. That is a convenience for the many tests that are about
+     * amounts, dates and duplicate rows rather than about direction, and it is the honest default: every
+     * schedule written before income schedules existed was an expense one. A test that is about income
+     * has to say so here, because the projection has no other way to become an income schedule.
+     */
+    private val categoryTypes: Map<Long, TransactionType> = emptyMap(),
 ) : RecurringDao {
 
     private val schedules: MutableMap<Long, RecurringScheduleEntity> =
@@ -260,6 +277,8 @@ class FakeRecurringDao(
                 description = description,
                 categoryId = categoryId,
                 amountPaise = amountPaise,
+                unit = unit,
+                ratePaise = ratePaise,
                 frequency = frequency,
                 intervalCount = intervalCount,
                 startDate = startDate,
@@ -270,6 +289,8 @@ class FakeRecurringDao(
                 updatedAt = updatedAt,
                 nextDueDate = nextDueDate(id),
                 categoryName = categoryName,
+                categoryType = categoryTypes[categoryId] ?: TransactionType.EXPENSE,
+                categoryIconKey = categoryIconKeys[categoryId],
             )
         }
 
@@ -289,6 +310,8 @@ class FakeRecurringDao(
             scheduleName = schedule.name,
             categoryId = schedule.categoryId,
             categoryName = name,
+            categoryType = categoryTypes[schedule.categoryId] ?: TransactionType.EXPENSE,
+            categoryIconKey = categoryIconKeys[schedule.categoryId],
         )
     }
 

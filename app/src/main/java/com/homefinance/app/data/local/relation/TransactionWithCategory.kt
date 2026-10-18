@@ -73,4 +73,12 @@ data class TransactionWithCategory(
 
     @ColumnInfo(name = "category_name")
     val categoryName: String,
+
+    /**
+     * The mark the category is drawn with, or `null` when nobody ever chose one - see
+     * [com.homefinance.app.data.model.CategoryIconKey]. Carried beside the name so a ledger row can
+     * draw the same picture the picker does, without a second read per row.
+     */
+    @ColumnInfo(name = "category_icon_key")
+    val categoryIconKey: String? = null,
 )

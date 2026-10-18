@@ -14,8 +14,9 @@ import androidx.room.PrimaryKey
  * things such as the chosen display currency long before the Settings screen is built. Adding it
  * now means version 1 of the schema does not have to be torn up later.
  *
- * There is intentionally no DAO for it yet - Task 2.1 only has to prove that the Room setup
- * compiles, generates an implementation and exports a schema.
+ * There is no empty-database trickery here: [AppSettingDao] reads and writes it one key at a time,
+ * and the only value stored so far is the flag that says the categories the app ships with have
+ * already been written.
  */
 @Entity(tableName = "app_setting")
 data class AppSettingEntity(

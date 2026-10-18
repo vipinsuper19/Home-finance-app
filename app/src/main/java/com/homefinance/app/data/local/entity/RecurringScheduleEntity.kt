@@ -11,15 +11,24 @@ import java.time.Instant
 import java.time.LocalDate
 
 /**
- * One recurring household expense: rent on the 5th, milk every day, the cylinder every two months.
+ * One recurring household item: rent on the 5th, milk every day, the cylinder every two months, a
+ * salary on the 1st.
  *
  * ### A schedule is a plan, not money
  *
- * This row records an *expectation*. It is not an expense, it moves no total, and nothing in this
+ * This row records an *expectation*. It is not an entry, it moves no total, and nothing in this
  * table is ever counted in the ledger: the money only becomes real when the household records one of
  * its occurrences as paid, which writes a separate [TransactionEntity]. That separation is the whole
  * point of the table, and it is why creating a schedule and letting its due date pass can never add
- * an expense on their own.
+ * an entry on their own.
+ *
+ * ### Which way the money moves
+ *
+ * There is deliberately no `type` column: the direction is the *category's* own
+ * [CategoryEntity.type], and a schedule whose category is an income category produces income when one
+ * of its occurrences is paid. A copy of the direction here would be a second place for it to be
+ * wrong, and the two would eventually disagree - the ledger entry is written against the category,
+ * so the category is the authority.
  *
  * ### The shape of the rule
  *
@@ -40,6 +49,14 @@ import java.time.LocalDate
  * ledger by itself. Each generated occurrence copies it, so changing the schedule's amount changes
  * what happens next without rewriting what was already expected - the same policy
  * [com.homefinance.app.data.repository.RecurringRepository] documents for the rule as a whole.
+ *
+ * [ratePaise] and [unit] are the optional *unit price*: "₹60 a litre", "₹45 a kilo". They are the
+ * two figures the household actually reads off a milk bill, so the list can say "Daily • ₹60/litre"
+ * instead of a monthly total it had to work out. They are recorded together or not at all, and
+ * neither is derived from the other: there is no quantity column, so
+ * whether the expected amount is one unit or twenty is a fact only the household knows. The
+ * expectation stays the authority for what an occurrence is worth, exactly as it does for every other
+ * schedule.
  *
  * ### Progress, not status
  *
@@ -62,9 +79,15 @@ import java.time.LocalDate
  *   Optional on purpose: a schedule that says everything in its name must not be forced to repeat
  *   itself. It is *not* used for anything financial - the amount, category and rule are all columns of
  *   their own - so it is never parsed and never has to be well-formed.
- * @param categoryId the expense category each occurrence's transaction will be filed under. The
- *   repository refuses anything but an existing, active **expense** category.
+ * @param categoryId the category each occurrence's transaction will be filed under. The category's
+ *   own type decides the direction of the money: an expense category makes this an expense schedule,
+ *   an income category makes it an income one. The repository refuses anything but an existing,
+ *   active category.
  * @param amountPaise the expected amount, positive, in paise.
+ * @param unit what one unit of the thing is called - "litre", "kg", "piece" - or `null` when the
+ *   household did not price it by unit. Free text, trimmed, and never parsed.
+ * @param ratePaise the price of one [unit], positive, in paise, or `null`. Recorded with [unit] or
+ *   not at all: a rate with nothing to price would be a figure the screens could not label.
  * @param frequency how often the schedule comes round.
  * @param intervalCount how many [frequency] units apart occurrences are; at least 1.
  * @param startDate the first occurrence and the anchor every later occurrence is derived from.
@@ -109,6 +132,12 @@ data class RecurringScheduleEntity(
 
     @ColumnInfo(name = "amount_paise")
     val amountPaise: Long,
+
+    @ColumnInfo(name = "unit")
+    val unit: String? = null,
+
+    @ColumnInfo(name = "rate_paise")
+    val ratePaise: Long? = null,
 
     @ColumnInfo(name = "frequency")
     val frequency: RecurrenceFrequency,

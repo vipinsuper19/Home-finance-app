@@ -5,7 +5,7 @@ A simple, offline-first Android application for managing household income, expen
 Home Finance is being built to make everyday financial tracking easier, including daily household expenses such as milk, monthly bills such as rent, and income received from tenants or other sources.
 
 > **Development status:** MVP in progress. The application shell, the local financial data layer, the
-> transaction list, add form, details, edit form and delete confirmation, and the recurring expense
+> transaction list, add form, details, edit form and delete confirmation, and the recurring schedule
 > engine with its schedules, occurrences and payment recording are in place and verified. Reporting,
 > reminders and export are planned.
 
@@ -19,24 +19,27 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Emerald-green visual theme.
 - Offline-first application architecture.
 - Room database foundation with schema export.
-- Application-scoped, lazy database initialization.
-- Income/expense transaction and category tables, with tested version 1 to version 2, version 2 to version 3 and version 3 to version 4 migrations.
-- DAOs for categories and transactions, plus a repository layer that validates amounts, category references, and category types.
+- Application-scoped database initialization, created on first use rather than while the application object is being constructed, with one deliberate exception: the single start-up run that writes the categories the app ships with.
+- Income/expense transaction and category tables, with tested version 1 to version 2, version 2 to version 3, version 3 to version 4, version 4 to version 5 and version 5 to version 6 migrations.
+- DAOs for categories, transactions, recurring schedules and application settings, plus a repository layer that validates amounts, category references, and category types.
 - A transaction list grouped under day headings, with a search box, all/income/expense filters and a month selector, showing each entry's category, description and amount in the colour of its direction.
 - Add income and add expense forms with exact paise parsing, validation, a date picker, and optional description and notes.
 - A separate category picker screen, listing the categories of the current type and offering to create one when there are none yet.
+- Twelve starter categories - milk, groceries, vegetables, home rent, shop rent, electricity, gas, internet, medical, transport, investments and salary - written once on the first start and then left alone: they can be renamed, retired or ignored like any other category, and no later start brings one back.
+- A category mark drawn with Compose Material icons rather than hand-drawn paths: a glyph on its own fixed tint and background, chosen by the category's stored icon key where one has been recorded and derived from its name otherwise, so a category the household adds still gets a sensible picture without being asked for one.
 - Optional quantity-and-rate entry for things bought by weight or volume, such as milk, with the amount derived from the two figures and stored alongside them.
 - A transaction details screen, opened by tapping a ledger row, showing the type, category, date, amount, optional quantity-and-rate, notes and the audit timestamps, with clear Edit and Delete actions.
 - Edit of an existing transaction through the same form the add screen uses, prefilled from the stored row and updating it in place: the row keeps its identifier and the day it was first recorded, and only the day it was last changed is re-stamped.
 - Delete with a confirmation dialog that says the removal cannot be undone, reporting a failure without removing anything and letting the list update itself from the database.
-- Recurring expense schedules for daily, weekly, monthly and yearly rules with a configurable interval, an optional end date, and a monthly/yearly date rule that clamps to the end of a short month without drifting.
-- A recurring list showing each schedule's name and description, category, expected amount, frequency, next due date and active or paused state, with an overdue marker that does not rely on colour alone, and loading, empty, error and retry states.
-- A recurring form for creating and editing schedules, reusing the ledger's exact rupee-to-paise parsing and its category picker, validating the name, amount, interval, dates and category, and selectable only from active expense categories.
+- Recurring schedules for daily, weekly, monthly and yearly rules with a configurable interval, an optional end date, and a monthly/yearly date rule that clamps to the end of a short month without drifting. A schedule's direction is its **category's** own type, so the same feature covers a rent payment and a salary: there is no separate "recurring income" to model, and a schedule cannot disagree with the category it files its payments under.
+- A recurring list filtered by All, Expense or Income, each row showing the category's mark, the schedule's name, its frequency and amount - or its unit price, when the household priced the thing by weight or volume - and the next due date, with an overdue marker that does not rely on colour alone, plus loading, empty, no-matches, error and retry states.
+- A recurring form for creating and editing schedules, reusing the ledger's exact rupee-to-paise parsing and its category picker, offering the same Income/Expense choice as the add-transaction form, and validating the name, amount, unit price, interval, dates and category; the categories on offer are the active ones of the chosen direction, and changing the direction clears a category that no longer belongs to it.
 - Generated recurring occurrences: the Recurring tab is opened, the dates the rule implies up to a bounded planning horizon are created, and a database unique index on (schedule, due date) makes a repeated, interrupted or concurrent run harmless.
-- Marking a recurring occurrence paid writes exactly one expense through the ordinary transaction path, links it to the occurrence and files it under the schedule's category, inside one database transaction and only if the occurrence is still pending.
-- Skipping an occurrence, pausing and resuming a schedule, and stopping a schedule for good: none of them write an expense, none of them delete anything, and pausing then resuming does not back-fill or duplicate dates.
-- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, repository validation, money and quantity input parsing and their edit round trips, date and timestamp formatting, transaction list filtering and grouping, category mark selection, the add, edit and details screen states, the recurrence calculator, the recurring list, form, details and occurrence view models, and the shared occurrence payment and skip state machine.
-- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety, the recurring unique index and foreign keys, the recurring repository and generator including concurrent and failed payments, and the transaction list, add-transaction form, edit-transaction form, category picker, transaction details, recurring list, recurring form, recurring details and occurrence history screens.
+- A recurring details screen stating the schedule's name, frequency and direction, its expected figure, its status, the next payment with how far off it is, the rule behind it, a paid/upcoming/overdue summary and the newest few payments, with Edit beside the facts it changes and Pause, Resume and Stop in the top bar's overflow menu.
+- Marking a recurring occurrence paid writes exactly one entry in the category's direction through the ordinary transaction path, links it to the occurrence and files it under the schedule's category, inside one database transaction and only if the occurrence is still pending - confirmed from a bottom sheet that states the date, the expected figure, the category and the description the entry will carry and reuses the ledger form's own amount field.
+- Skipping an occurrence, pausing and resuming a schedule, and stopping a schedule for good: none of them write a transaction, none of them delete anything, and pausing then resuming does not back-fill or duplicate dates.
+- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, category mark keys and the list of categories the app ships with, the one-off category seeder, the category mark palette, repository validation, money and quantity input parsing and their edit round trips, date and timestamp formatting, transaction list filtering and grouping, the add, edit and details screen states, the recurrence calculator, the recurring list, form, details and occurrence view models, and the shared occurrence payment and skip state machine.
+- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety through every step to the current schema, the unique category-name index as both an insert and an ignore, the recurring unique index and foreign keys, category seeding including its rollback and its idempotence, the recurring repository and generator including concurrent and failed payments, and the transaction list, add-transaction form, edit-transaction form, category picker, transaction details, recurring list, recurring form, recurring details and occurrence history screens.
 - No backend or account registration required for the current architecture.
 
 ### Planned
@@ -45,7 +48,6 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Track daily milk purchases over time, now that a single purchase can be recorded by quantity and rate.
 - Track monthly rental income.
 - Record expected and actual rent receipts, including partial payments and outstanding balances.
-- Recurring income schedules, now that recurring expenses are in place.
 - View monthly income, expenses, and net balance.
 - Schedule reminders for recurring payments.
 - Export financial records and support backup and restore.
@@ -60,6 +62,7 @@ Features will be marked as implemented as they are completed and verified.
 | Kotlin | Primary programming language |
 | Jetpack Compose | Declarative Android UI |
 | Material 3 | UI components and design system |
+| Material Icons (extended) | The glyphs drawn as category marks |
 | AndroidX Navigation Compose | App navigation |
 | Room | Local SQLite database |
 | KSP | Kotlin annotation processing for Room |
@@ -103,6 +106,7 @@ app/
 │   │   │   │   ├── common/
 │   │   │   │   ├── ui/
 │   │   │   │   │   ├── component/
+│   │   │   │   │   ├── icon/
 │   │   │   │   │   └── theme/
 │   │   │   │   └── util/
 │   │   │   ├── data/
@@ -216,16 +220,17 @@ The following rules guide financial feature development:
 - Store a typed quantity as integer thousandths and a rate as integer paise per unit, so a purchase by weight or volume is recorded as the two figures the household actually saw rather than only as a total.
 - Keep expected amounts distinct from actual payments.
 - Treat a recurring schedule as a plan rather than a payment: generating a due date must never insert a transaction or move a total.
+- Take a recurring schedule's direction from its category's own type rather than from a property of the schedule, so a schedule cannot record income as an expense or the other way round.
 - Never mark a scheduled occurrence paid merely because its due date has passed.
 - Preserve historical financial records when categories or recurring settings change.
 - Do not delete existing user data through destructive database migrations.
 - Use database migrations when the schema changes.
-- Do not insert demonstration transactions into the user's real financial records.
+- Do not insert demonstration transactions into the user's real financial records. The categories the app ships with are not records: a category carries no amount and no date, they are written once rather than on every start, and a household that does not want them can retire them and never see them again.
 - Test calculations, validation, and persistence independently of the UI.
 
-## Recurring Expenses
+## Recurring Schedules
 
-A recurring expense is a **plan**, not a payment. Three separate things are stored, and keeping them apart
+A recurring schedule is a **plan**, not a payment. Three separate things are stored, and keeping them apart
 is what the feature is built on:
 
 1. a **schedule** - "shop rent, ₹15,000, monthly on the 5th, from 5 October 2026";
@@ -236,6 +241,15 @@ is what the feature is built on:
 
 Because of that split, a bill falling due never changes a household's expenses, and a date that passes while
 the phone is off is still sitting there unpaid rather than quietly paid.
+
+### Direction comes from the category
+
+There is no "recurring income" feature beside a "recurring expense" one. A schedule points at a category, and
+the direction of every payment it produces is that category's own type. Rent comes round and so does a salary;
+the recurring tab offers both, filtered by All, Expense or Income, and the schedule's details screen says which
+way the money moves in words as well as in colour. The single consequence worth stating plainly is that a
+schedule cannot be created under a category it disagrees with, which is what stops a schedule quietly recording
+an expense against an income category.
 
 ### Frequencies and dates
 
@@ -253,6 +267,10 @@ the phone is off is still sitting there unpaid rather than quietly paid.
   which day a bill falls on.
 - The start date is the first date of the rule and is included. The optional end date is included too, and
   nothing is ever generated after it. With no end date the rule continues until it is paused or stopped.
+- A schedule may record **how the thing is priced** as well as what it expects: an optional unit ("litre") and
+  the price of one unit. The two are stored together or not at all, the unit price is descriptive, and the
+  expected amount stays the authoritative per-occurrence figure - the household may buy one litre or twenty and
+  only they know which, so a payment writes the amount and never the rate.
 
 ### Generating occurrences
 
@@ -268,18 +286,22 @@ the phone is off is still sitting there unpaid rather than quietly paid.
 
 ### Recording a payment
 
-- "Mark paid" states the schedule's name, its category, the due date and the expected amount before anything is
-  written, so a payment is confirmed rather than assumed.
-- The expected amount is pre-filled and can be corrected to what was actually paid. The corrected figure goes
-  through the same exact rupee-to-paise parsing as the ledger's own form, and the occurrence keeps its expected
-  amount either way.
-- The expense is filed under the schedule's category and dated the occurrence's due date, and the occurrence is
-  linked to it.
+- "Mark … as Received" (for an income category) or "Mark … as Paid" (for an expense one) opens a bottom sheet
+  that states the schedule, the direction, the due date and weekday, the expected amount and the category, and
+  the description the entry will carry - so a payment is confirmed rather than assumed.
+- The sheet draws the ledger form's own amount field: the expected amount is pre-filled and can be corrected to
+  what was actually handed over, through the same exact rupee-to-paise parsing as the ledger. The expected figure
+  stays on screen beside the field, so the two are never merged into one number.
+- The entry is filed under the schedule's category and dated the occurrence's due date, carries the category's
+  type, and is linked to the occurrence it settles.
 - The whole thing runs in one database transaction and the occurrence is updated only if it is still pending, so
-  a double tap, a retry or a replay records exactly one expense. The dialog stays open and says the occurrence
-  was already settled.
-- A failure is reported as a failure: the dialog does not close and the typed figure is kept.
-- Skipping records no expense at all. The occurrence is kept, so it is never generated again, and no total moves.
+  a double tap, a retry or a replay records exactly one entry. The sheet stays open and says the occurrence was
+  already settled.
+- A failure is reported as a failure: the sheet does not close and the typed figure is kept.
+- Skipping records no entry at all. The occurrence is kept, so it is never generated again, and no total moves.
+- The category picker and date picker are deliberately *not* offered here. The entry is filed under the
+  schedule's own category and dated the date the schedule committed to; a control the write would then ignore
+  would be worse than no control.
 
 ### Pausing, resuming and stopping
 
@@ -298,9 +320,10 @@ the phone is off is still sitting there unpaid rather than quietly paid.
 
 ### Known limitations
 
-- Recurring schedules are **expenses only**; recurring income is not modelled yet.
-- There are no reminders or notifications and no background generation, so dates appear when the tab is opened.
-- A payment is posted on the occurrence's due date; there is no way to date it differently.
+- There are no reminders or notifications - the details screen deliberately does not pretend otherwise - and no
+  background generation, so dates appear when the tab is opened.
+- A payment is posted on the occurrence's due date; there is no way to date it differently, because the entry
+  is the payment of *that* date.
 - Occurrences are never deleted, only resolved, and a stopped schedule cannot be restarted.
 - Deleting a recorded payment from the ledger leaves the occurrence saying it was paid and marks the link as
   gone. It does not reopen the occurrence or make the date generatable again.
@@ -321,9 +344,20 @@ Room schema exports are maintained under:
 app/schemas/
 ```
 
-Schema versions 1 to 4 are exported, with a tested migration for every step: version 1 to 2 introduced the
-financial tables, version 2 to 3 added quantity and rate, and version 3 to 4 added the recurring schedule and
-occurrence tables with their indices. Every migration is asserted to preserve the rows already on the device.
+Schema versions 1 to 6 are exported, with a tested migration for every step: version 1 to 2 introduced the
+financial tables, version 2 to 3 added quantity and rate, version 3 to 4 added the recurring schedule and
+occurrence tables with their indices, version 4 to 5 added a category's stored icon key, and version 5 to 6
+added a schedule's optional unit and unit price. Every migration is asserted to preserve the rows already on
+the device.
+
+The version 5 to 6 migration adds two nullable columns and nothing else, so no existing schedule is given a unit
+price it never had, and every schedule keeps the expected amount it was created with.
+
+The version 4 to 5 migration adds a nullable column and nothing else, so no existing category is given a mark
+it never had. The twelve categories the app ships with are written by the app itself, once, on the next start,
+and recorded in `app_setting`; a migration is not the place for that, because it would have to invent names a
+household may already use. Categories the household writes are stored with no icon key at all and are drawn
+from their name instead, which is exactly what every version before 5 did.
 Backup and restore behavior will be implemented and tested as the application evolves.
 
 **Privacy note:** Local-first storage does not automatically guarantee that every data path is private or excluded from device backup. Review Android backup rules and export behavior before using the application for sensitive financial records.
@@ -338,7 +372,7 @@ Backup and restore behavior will be implemented and tested as the application ev
 | Task 3.1 | Transaction list and UI state | Completed |
 | Task 3.2 | Add income and expense forms | Completed |
 | Task 3.3 | Edit and delete transactions | Completed |
-| Task 4 | Recurring expense engine | Completed |
+| Task 4 | Recurring schedule engine, list, form and details | Completed |
 | Task 5 | Milk tracking and rental income management | Planned |
 | Task 6 | Reminders and local notifications | Planned |
 | Task 7 | Reports, export, and backup/restore | Planned |
@@ -355,6 +389,7 @@ Testing will cover:
 - Currency formatting and monetary calculations.
 - Financial transaction validation.
 - Category and transaction persistence.
+- Category seeding: that the shipped categories are written once, invent no records, and can be retried safely.
 - Database migration safety.
 - Recurring schedule generation.
 - Date-range filtering.

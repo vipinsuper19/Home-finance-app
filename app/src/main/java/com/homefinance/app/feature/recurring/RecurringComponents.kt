@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Warning
@@ -20,6 +21,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -32,12 +35,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.homefinance.app.R
+import com.homefinance.app.core.ui.theme.OnUtilityContainer
+import com.homefinance.app.core.ui.theme.UtilityContainer
 import com.homefinance.app.core.util.CurrencyFormatter
 import com.homefinance.app.core.util.DateFormatter
 import com.homefinance.app.data.model.RecurringScheduleStatus
@@ -54,7 +60,16 @@ import java.time.LocalDate
  */
 
 /**
- * One schedule in the Recurring list.
+ * One schedule in the Recurring list: its mark, its name, its rule and figure, and when it next falls
+ * due.
+ *
+ * ### Three lines, and no more
+ *
+ * A row states what the schedule is, what it expects and when, in that order. The description and the
+ * category's own name are *not* repeated here even though the schedule may have both: the mark beside
+ * the name is the category at a glance, the details screen spells both out, and a row that grew a line
+ * for every fact a schedule has would stop being scannable, which is the one thing a list of bills has
+ * to be.
  *
  * ### The whole row is the tap target
  *
@@ -84,8 +99,9 @@ internal fun RecurringScheduleRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CategoryMark(
+            iconKey = card.categoryIconKey,
             categoryName = card.categoryName,
-            type = TransactionType.EXPENSE,
+            type = card.categoryType,
             size = 44.dp,
         )
 
@@ -102,32 +118,15 @@ internal fun RecurringScheduleRow(
                 overflow = TextOverflow.Ellipsis,
             )
 
-            if (card.description != null) {
-                Text(
-                    text = card.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-
-            // The rule and the figure it expects, on one line: "Monthly • ₹15,000.00".
+            // The rule and the figure it expects, on one line: "Monthly • ₹15,000.00", or the unit
+            // price the household actually read off the bill: "Daily • ₹60.00 / litre".
             Text(
                 text = listOf(
                     frequencySummary(card.frequency, card.intervalCount),
-                    CurrencyFormatter.formatInr(card.amountPaise),
+                    rateOrAmountText(card.amountPaise, card.ratePaise, card.unit),
                 ).joinToString(separator = " • "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Text(
-                text = card.categoryName,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
 
             NextDueLine(card = card)
@@ -150,6 +149,80 @@ internal fun RecurringScheduleRow(
             )
         }
     }
+}
+
+/**
+ * The All / Expense / Income bar above the list.
+ *
+ * Three chips rather than a menu, because there are three and because each is a fact the household may
+ * want to compare - a dropdown would hide two of them behind a tap. They are `selectable` in a
+ * `selectableGroup` for the same reason the ledger's filter bar is: a screen reader then announces one
+ * choice among three instead of three buttons, and "which one is on" is never carried by colour alone.
+ *
+ * Each chip is the same width so the bar does not change shape as the selection moves, and the chosen
+ * one is filled in the theme's `primary` - the mock-up's own treatment - so the current view is
+ * readable before the label is.
+ */
+@Composable
+internal fun ScheduleTypeFilterBar(
+    selected: ScheduleTypeFilter,
+    onFilterChange: (ScheduleTypeFilter) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .selectableGroup(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        // All, Expense, Income - the order the design draws them, and the order the ledger does not
+        // share, because that bar was designed separately. The words are the ledger's own, so the two
+        // screens cannot mean different things by "Expense".
+        ScheduleTypeChip(
+            label = stringResource(R.string.transactions_filter_all),
+            filter = ScheduleTypeFilter.ALL,
+            selected = selected,
+            onFilterChange = onFilterChange,
+            modifier = Modifier.weight(1f),
+        )
+        ScheduleTypeChip(
+            label = stringResource(R.string.transactions_filter_expense),
+            filter = ScheduleTypeFilter.EXPENSE,
+            selected = selected,
+            onFilterChange = onFilterChange,
+            modifier = Modifier.weight(1f),
+        )
+        ScheduleTypeChip(
+            label = stringResource(R.string.transactions_filter_income),
+            filter = ScheduleTypeFilter.INCOME,
+            selected = selected,
+            onFilterChange = onFilterChange,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** One chip of [ScheduleTypeFilterBar]. */
+@Composable
+private fun ScheduleTypeChip(
+    label: String,
+    filter: ScheduleTypeFilter,
+    selected: ScheduleTypeFilter,
+    onFilterChange: (ScheduleTypeFilter) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val chosen = filter == selected
+
+    FilterChip(
+        selected = chosen,
+        onClick = { onFilterChange(filter) },
+        label = { Text(text = label, maxLines = 1) },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primary,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+        ),
+        modifier = modifier,
+    )
 }
 
 /**
@@ -214,32 +287,37 @@ private fun NextDueLine(card: RecurringScheduleCard, modifier: Modifier = Modifi
     }
 }
 
-/** The "Paused" / "Stopped" chip: a schedule that is not generating anything says so in words. */
+/** The "Active" / "Paused" / "Stopped" chip: a schedule that is not generating anything says so in words. */
 @Composable
 internal fun ScheduleStatusChip(
     status: RecurringScheduleStatus,
     modifier: Modifier = Modifier,
 ) {
-    val paused = status == RecurringScheduleStatus.PAUSED
+    // Active is drawn as well as the two stopped states, because the details screen's heading states
+    // where the schedule stands rather than only complaining when it is not running. The three are
+    // three different containers so "running", "held" and "over" cannot be told apart by shape alone.
+    val container = when (status) {
+        RecurringScheduleStatus.ACTIVE -> MaterialTheme.colorScheme.primaryContainer
+        RecurringScheduleStatus.PAUSED -> MaterialTheme.colorScheme.secondaryContainer
+        RecurringScheduleStatus.RETIRED -> MaterialTheme.colorScheme.errorContainer
+    }
+    val content = when (status) {
+        RecurringScheduleStatus.ACTIVE -> MaterialTheme.colorScheme.onPrimaryContainer
+        RecurringScheduleStatus.PAUSED -> MaterialTheme.colorScheme.onSecondaryContainer
+        RecurringScheduleStatus.RETIRED -> MaterialTheme.colorScheme.onErrorContainer
+    }
 
     Surface(
         shape = MaterialTheme.shapes.small,
-        color = if (paused) {
-            MaterialTheme.colorScheme.secondaryContainer
-        } else {
-            MaterialTheme.colorScheme.errorContainer
-        },
-        contentColor = if (paused) {
-            MaterialTheme.colorScheme.onSecondaryContainer
-        } else {
-            MaterialTheme.colorScheme.onErrorContainer
-        },
+        color = container,
+        contentColor = content,
         modifier = modifier,
     ) {
         Text(
             text = stringResource(status.labelRes()),
             style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
         )
     }
 }
@@ -247,8 +325,16 @@ internal fun ScheduleStatusChip(
 /**
  * One occurrence's state, as a chip.
  *
- * The overdue reading is the only one that adds a glyph, for the same reason the list row does: it is
- * the one state that is asking to be noticed, and it must not depend on the reader telling two
+ * ### Four readings, four containers
+ *
+ * Overdue is the one that is asking to be noticed and is drawn in the error container; a date that is
+ * simply ahead is drawn in the amber a household associates with a bill that has not arrived yet;
+ * paid is drawn in the secondary green, because the money moved; and a skip is drawn in the neutral
+ * surface, because nothing happened at all. The *words* are what carry the meaning - the colours only
+ * agree with them.
+ *
+ * The overdue reading is also the only one that adds a glyph, for the same reason the list row does:
+ * it is the one state that has to be noticed, and it must not depend on the reader telling two
  * container colours apart.
  */
 @Composable
@@ -258,18 +344,23 @@ internal fun OccurrenceStateChip(
 ) {
     val settled = state.isSettled()
 
+    val container = when {
+        state == OccurrenceDisplayState.OVERDUE -> MaterialTheme.colorScheme.errorContainer
+        state == OccurrenceDisplayState.PAID -> MaterialTheme.colorScheme.secondaryContainer
+        state == OccurrenceDisplayState.SKIPPED -> MaterialTheme.colorScheme.surfaceVariant
+        else -> UtilityContainer
+    }
+    val content = when {
+        state == OccurrenceDisplayState.OVERDUE -> MaterialTheme.colorScheme.onErrorContainer
+        state == OccurrenceDisplayState.PAID -> MaterialTheme.colorScheme.onSecondaryContainer
+        state == OccurrenceDisplayState.SKIPPED -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> OnUtilityContainer
+    }
+
     Surface(
         shape = MaterialTheme.shapes.small,
-        color = when {
-            state == OccurrenceDisplayState.OVERDUE -> MaterialTheme.colorScheme.errorContainer
-            settled -> MaterialTheme.colorScheme.surfaceVariant
-            else -> MaterialTheme.colorScheme.secondaryContainer
-        },
-        contentColor = when {
-            state == OccurrenceDisplayState.OVERDUE -> MaterialTheme.colorScheme.onErrorContainer
-            settled -> MaterialTheme.colorScheme.onSurfaceVariant
-            else -> MaterialTheme.colorScheme.onSecondaryContainer
-        },
+        color = container,
+        contentColor = content,
         modifier = modifier,
     ) {
         Row(
@@ -300,98 +391,146 @@ internal fun OccurrenceStateChip(
 }
 
 /**
- * The headline block of a schedule's details: what it is for, what it expects, and where it stands.
+ * The heading of a schedule's details: what it is called, how often it comes round, which way the money
+ * moves, what it expects and where it stands.
  *
- * The amount is the schedule's *expected* figure and is drawn with the same formatter the ledger uses,
- * so "what this costs" cannot read differently in two places.
+ * ### Not a card
  *
- * It deliberately does **not** show a next due date. The block beneath it names the one occurrence that
- * is actually waiting - or says that nothing is - and it does so with the date, the expected figure of
- * *that* occurrence and the two buttons that settle it. Repeating the date here as well would put the
- * same fact on screen twice, in one place without the ability to act on it.
+ * The heading sits on the page rather than in a bordered box: it is the screen's title, and a title
+ * inside a container reads as one more *fact* to be compared with the others instead of the subject they
+ * are all about.
+ *
+ * ### The subtitle names the rule *and* the direction
+ *
+ * "Monthly Income" is the two things the household needs to place the figure below it - how often, and
+ * which way - and it replaces the category's name, which the information card spells out in full. The
+ * *direction* is the category's own type (see [RecurringScheduleCard.categoryType]), so the word cannot
+ * disagree with the colour of the mark or with the entry this schedule's payments produce.
+ *
+ * ### The amount is the expected figure
+ *
+ * Drawn with the same formatter the ledger uses, so "what this costs" cannot read differently in two
+ * places. When the household priced the thing by unit, the price of one unit is printed under it as well
+ * ("₹60.00 / litre") - a *second* fact, not a replacement: the household may buy one litre or twenty, and
+ * only they know which, so the amount stays the one the engine copies into an occurrence.
+ *
+ * It deliberately does **not** show a next due date. The card beneath it names the occurrence that is
+ * actually waiting - or says that nothing is - with the date, that occurrence's figure and the button
+ * that settles it. Repeating the date here as well would put the same fact on screen twice, once without
+ * the ability to act on it.
  */
 @Composable
 internal fun RecurringScheduleSummary(
     name: String,
-    description: String?,
     categoryName: String,
+    categoryType: TransactionType,
+    categoryIconKey: String?,
     amountPaise: Long,
     frequency: String,
     status: RecurringScheduleStatus,
+    unit: String? = null,
+    ratePaise: Long? = null,
     modifier: Modifier = Modifier,
 ) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+            CategoryMark(
+                iconKey = categoryIconKey,
+                categoryName = categoryName,
+                type = categoryType,
+                size = 56.dp,
+            )
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                CategoryMark(
-                    categoryName = categoryName,
-                    type = TransactionType.EXPENSE,
-                    size = 44.dp,
+                Text(
+                    text = name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(text = name, style = MaterialTheme.typography.titleMedium)
+
+                Text(
+                    text = stringResource(
+                        R.string.recurring_detail_direction,
+                        frequency,
+                        stringResource(categoryType.labelRes()),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Text(
+                    text = CurrencyFormatter.formatInr(amountPaise),
+                    style = MaterialTheme.typography.headlineSmall
+                        .copy(fontWeight = FontWeight.Bold),
+                    color = amountColorFor(categoryType),
+                )
+
+                if (ratePaise != null && unit != null) {
                     Text(
-                        text = categoryName,
+                        text = stringResource(
+                            R.string.recurring_detail_unit_price,
+                            CurrencyFormatter.formatInr(ratePaise),
+                            unit,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                ScheduleStatusChip(status = status)
             }
-
-            if (description != null) {
-                Text(
-                    text = description,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            Text(
-                text = CurrencyFormatter.formatInr(amountPaise),
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
-            )
-
-            Text(
-                text = frequency,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
         }
+
+        ScheduleStatusChip(status = status)
     }
 }
 
-/** One label-and-value line of a details card. */
+/**
+ * One label-and-value line of a details card.
+ *
+ * The label and the value sit at opposite ends of the line, so a column of rows can be read down the
+ * labels and across to the figures without the two running into each other. [icon] is optional and
+ * decorative: it is drawn muted and carries no content description, because the label beside it already
+ * says what the row is.
+ */
 @Composable
 internal fun RecurringDetailRow(
     label: String,
     value: String,
     modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
     valueColor: Color = Color.Unspecified,
 ) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.Top,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (icon != null) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+        }
+
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
@@ -420,15 +559,17 @@ internal fun RecurringDetailDivider(modifier: Modifier = Modifier) {
 /**
  * One occurrence in the history: its date, what it was expected to be worth, and what became of it.
  *
- * An occurrence whose expense was deleted from the ledger keeps its "Paid" chip - the payment *was*
- * recorded - and gains a line saying the record is gone, rather than being quietly re-labelled as
+ * An occurrence whose recorded entry was deleted from the ledger keeps its "Paid" chip - the payment
+ * *was* recorded - and gains a line saying the record is gone, rather than being quietly re-labelled as
  * unpaid. That is what the occurrence's own status means, and rewriting it would be inventing history.
  *
- * The two actions are nullable rather than optional-in-a-boolean, because the details screen's short
- * history genuinely does not offer them: a household reading back through October should not be one
- * stray tap away from settling a date they were only looking at. Settling happens on the outstanding
- * block above, or on the full history screen, where each row is the thing being acted on.
+ * The two actions are nullable rather than optional-in-a-boolean, because a settled row genuinely does
+ * not offer them: a household reading back through October should not be one stray tap away from
+ * settling a date they were only looking at. Settling happens on the outstanding block above, or on
+ * the full history screen, where each row is the thing being acted on.
  *
+ * @param type the direction of the entry a payment would write, so the row's own button uses the same
+ *   verb the schedule's details screen does: a household receiving a salary is not "paying" it.
  * @param onPay offered only while the occurrence is still pending, and `null` where it is not offered.
  * @param onSkip offered only while the occurrence is still pending, and `null` where it is not offered.
  */
@@ -437,6 +578,7 @@ internal fun OccurrenceRow(
     dueDate: LocalDate,
     amountPaise: Long,
     state: OccurrenceDisplayState,
+    type: TransactionType,
     transactionRemoved: Boolean,
     onPay: (() -> Unit)? = null,
     onSkip: (() -> Unit)? = null,
@@ -486,7 +628,15 @@ internal fun OccurrenceRow(
                 }
                 if (onPay != null) {
                     TextButton(onClick = onPay) {
-                        Text(text = stringResource(R.string.recurring_pay_action))
+                        Text(
+                            text = stringResource(
+                                if (type == TransactionType.INCOME) {
+                                    R.string.recurring_pay_action_received
+                                } else {
+                                    R.string.recurring_pay_action_paid
+                                },
+                            ),
+                        )
                     }
                 }
             }

@@ -20,9 +20,11 @@ import androidx.room.withTransaction
  * [RoomTransactionRunner], a test passes something that either runs the block directly or fails it on
  * purpose, and both are a `suspend` function that returns the block's result.
  *
- * It is deliberately **not** a general-purpose transaction API. There is one caller - the recurring
- * payment path - because that is the one place in Home Finance where a single household action has to
- * write to two tables.
+ * It is deliberately **not** a general-purpose transaction API. There are two callers, and each has a
+ * reason that would be a bug without one: the recurring payment path, where a single household action
+ * has to write to two tables, and [com.homefinance.app.data.repository.CategorySeeder], where the
+ * seeded rows and the flag that says the run happened have to land together or not at all. Anything
+ * else that only writes one row does not need this.
  */
 interface TransactionRunner {
 

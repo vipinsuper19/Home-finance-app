@@ -12,9 +12,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,6 +32,7 @@ import com.homefinance.app.core.ui.component.StatusPane
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
 import com.homefinance.app.data.model.RecurrenceFrequency
 import com.homefinance.app.data.model.RecurringScheduleStatus
+import com.homefinance.app.data.model.TransactionType
 import java.time.Instant
 import java.time.LocalDate
 
@@ -43,7 +44,7 @@ import java.time.LocalDate
  *
  * [RecurringListViewModel] brings every active schedule's occurrences up to date when it is created, so
  * simply opening this tab is what keeps the due dates current. That is deliberate and it is safe: a
- * generated occurrence is an expectation, never an expense, and generating one moves no total. Nothing
+ * generated occurrence is an expectation, never an entry, and generating one moves no total. Nothing
  * here, and nothing reachable from here, marks a bill paid because its date arrived - that takes a
  * deliberate tap on "Mark as paid".
  *
@@ -54,6 +55,14 @@ import java.time.LocalDate
  * without this screen knowing anything happened. There is no pull-to-refresh: it would be a gesture
  * that re-reads data the screen is already being pushed, and the failure it might be reached for -
  * a stale read - is exactly what the loading, error and retry states are for.
+ *
+ * ### Why the add action is in the bar
+ *
+ * Adding a schedule is one tap, and the bar is where this app puts the actions that belong to the
+ * screen rather than to a row - see [com.homefinance.app.core.ui.component.HomeFinanceTopBar]. It
+ * stays on screen in every state, including the one where there is nothing to list yet, which is why
+ * the empty state also keeps a button of its own: a household with no schedules at all should not have
+ * to find the plus sign to begin.
  *
  * ### Why there is no back arrow
  *
@@ -77,6 +86,7 @@ fun RecurringScreen(
         onAddSchedule = onAddSchedule,
         onOpenSchedule = onOpenSchedule,
         onActiveChange = viewModel::setActive,
+        onFilterChange = viewModel::onFilterChange,
         modifier = modifier,
     )
 }
@@ -85,7 +95,8 @@ fun RecurringScreen(
  * The screen's body, taking its state as a parameter.
  *
  * Split out from [RecurringScreen] so each state - loading, failed, empty, and populated, including a
- * failed *action* over a perfectly good list - can be rendered and asserted directly.
+ * failed *action* over a perfectly good list and a filter that matched nothing - can be rendered and
+ * asserted directly.
  */
 @Composable
 internal fun RecurringContent(
@@ -94,10 +105,21 @@ internal fun RecurringContent(
     onAddSchedule: () -> Unit,
     onOpenSchedule: (Long) -> Unit,
     onActiveChange: (Long, Boolean) -> Unit,
+    onFilterChange: (ScheduleTypeFilter) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        HomeFinanceTopBar(title = stringResource(R.string.title_recurring))
+        HomeFinanceTopBar(
+            title = stringResource(R.string.recurring_screen_title),
+            actions = {
+                IconButton(onClick = onAddSchedule) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = stringResource(R.string.recurring_add),
+                    )
+                }
+            },
+        )
 
         Box(
             modifier = Modifier
@@ -128,20 +150,7 @@ internal fun RecurringContent(
                     onAddSchedule = onAddSchedule,
                     onOpenSchedule = onOpenSchedule,
                     onActiveChange = onActiveChange,
-                )
-            }
-
-            // Offered in every state, including the empty one: adding the household's first recurring
-            // expense is exactly what an empty list should invite.
-            FloatingActionButton(
-                onClick = onAddSchedule,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Add,
-                    contentDescription = stringResource(R.string.recurring_add),
+                    onFilterChange = onFilterChange,
                 )
             }
         }
@@ -149,11 +158,16 @@ internal fun RecurringContent(
 }
 
 /**
- * The loaded screen: a failed action's strip if there is one, then the schedules.
+ * The loaded screen: a failed action's strip if there is one, the filter, then the schedules.
  *
- * An empty list is a success and is drawn as an invitation. It is *not* the same screen as the failure
- * above it, and it must never be: a household whose schedules could not be read still has them, and
- * telling them they have none would be a lie about their own money.
+ * ### The two empty screens are not the same screen
+ *
+ * A household with no schedules at all gets an invitation and *no* filter bar: there is nothing to
+ * filter, and three chips over an empty page would invite them to look for a problem that does not
+ * exist. A household whose filter simply matched nothing keeps the bar and is told that is what
+ * happened, because the alternative - "No recurring schedules yet" over a database full of them -
+ * would be a lie about their own money. Neither is the failure above, which must never be dressed as
+ * "you have nothing".
  */
 @Composable
 private fun ReadyBody(
@@ -161,6 +175,7 @@ private fun ReadyBody(
     onAddSchedule: () -> Unit,
     onOpenSchedule: (Long) -> Unit,
     onActiveChange: (Long, Boolean) -> Unit,
+    onFilterChange: (ScheduleTypeFilter) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -171,7 +186,7 @@ private fun ReadyBody(
             )
         }
 
-        if (state.schedules.isEmpty()) {
+        if (!state.hasAnySchedule) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -192,21 +207,44 @@ private fun ReadyBody(
                     },
                 )
             }
+            return@Column
+        }
+
+        ScheduleTypeFilterBar(
+            selected = state.filter,
+            onFilterChange = onFilterChange,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+
+        if (state.schedules.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(R.string.recurring_no_matches),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp),
+                )
+            }
         } else {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
             ) {
+                // No dividers between the rows: the mark, the name and the three lines under it are
+                // enough to tell one schedule from the next, and a rule under every row would put the
+                // eye back on the lines rather than on the figures.
                 items(items = state.schedules, key = { it.id }) { schedule ->
                     RecurringScheduleRow(
                         card = schedule,
                         onOpen = { onOpenSchedule(schedule.id) },
                         onActiveChange = { active -> onActiveChange(schedule.id, active) },
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(start = 76.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant,
                     )
                 }
             }
@@ -232,6 +270,7 @@ private fun RecurringContentPreview() {
                         name = "Shop rent",
                         description = "Ground floor, paid by UPI",
                         categoryName = "Rent",
+                        categoryType = TransactionType.EXPENSE,
                         amountPaise = 1_500_000L,
                         frequency = RecurrenceFrequency.MONTHLY,
                         intervalCount = 1,
@@ -247,7 +286,10 @@ private fun RecurringContentPreview() {
                         name = "Milk",
                         description = null,
                         categoryName = "Milk",
+                        categoryType = TransactionType.EXPENSE,
                         amountPaise = 6_000L,
+                        unit = "litre",
+                        ratePaise = 6_000L,
                         frequency = RecurrenceFrequency.DAILY,
                         intervalCount = 1,
                         status = RecurringScheduleStatus.PAUSED,
@@ -257,12 +299,29 @@ private fun RecurringContentPreview() {
                         nextDueDate = LocalDate.of(2026, 11, 5),
                         nextDueState = OccurrenceDisplayState.UPCOMING,
                     ),
+                    RecurringScheduleCard(
+                        id = 3L,
+                        name = "Salary",
+                        description = null,
+                        categoryName = "Salary",
+                        categoryType = TransactionType.INCOME,
+                        amountPaise = 4_500_000L,
+                        frequency = RecurrenceFrequency.MONTHLY,
+                        intervalCount = 1,
+                        status = RecurringScheduleStatus.ACTIVE,
+                        startDate = LocalDate.of(2026, 10, 1),
+                        endDate = null,
+                        addedAt = Instant.parse("2026-10-01T04:30:00Z"),
+                        nextDueDate = LocalDate.of(2026, 11, 1),
+                        nextDueState = OccurrenceDisplayState.UPCOMING,
+                    ),
                 ),
             ),
             onRetry = {},
             onAddSchedule = {},
             onOpenSchedule = {},
             onActiveChange = { _, _ -> },
+            onFilterChange = {},
         )
     }
 }

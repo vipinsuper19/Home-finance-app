@@ -373,6 +373,7 @@ class OccurrenceActionsControllerTest {
             occurrenceId = OCCURRENCE_ID,
             scheduleName = "Shop rent",
             categoryName = "Rent",
+            type = TransactionType.EXPENSE,
             dueDate = DUE_DATE,
             amountPaise = 1_500_000L,
         )

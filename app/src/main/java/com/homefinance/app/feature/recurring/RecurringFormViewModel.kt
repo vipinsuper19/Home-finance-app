@@ -28,6 +28,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
@@ -36,31 +38,41 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Backs one form for both creating a recurring expense and changing an existing one.
+ * Backs one form for both creating a recurring schedule and changing an existing one.
  *
  * ### One form, two jobs, on purpose
  *
  * An edit and a creation ask for exactly the same facts in exactly the same way, so they are the same
  * screen with the same validation and the same wording. Two screens would drift, and the rules that
- * matter here - a positive amount, a category that is really an active expense category, an end date
- * that does not precede the start date - would end up enforced in one and not the other.
- * [editingId] is the whole difference: `null` writes a new schedule, non-null rewrites that one.
+ * matter here - a positive amount, a category that is really an active category of the right type, an
+ * end date that does not precede the start date, a unit price that is complete - would end up enforced
+ * in one and not the other. [editingId] is the whole difference: `null` writes a new schedule, non-null
+ * rewrites that one.
+ *
+ * ### Where the direction comes from
+ *
+ * There is no direction to send: [RecurringFormUiState.type] decides which categories the picker may
+ * offer, and the schedule's direction is then simply the type of the category it was filed under - see
+ * [com.homefinance.app.data.local.entity.RecurringScheduleEntity]. That is why switching the type drops
+ * any chosen category, and why this class never has to tell the repository which way the money goes.
  *
  * ### Where the rules live
  *
  * This class validates only what the *screen* needs to complain about: a non-blank name, a parseable
- * positive amount, a parseable interval, a category having been chosen, and an end date not before the
- * start date. The authoritative rules - the amount really is positive, the interval really is within
- * range, the category really exists and really is an expense category, the dates really are ordered -
- * stay in [RecurringRepository], which refuses any write that breaks them. Duplicating those checks here
- * would create a second copy of the rules that could drift from the tested one.
+ * positive amount, a parseable interval, a category having been chosen, an end date not before the
+ * start date, and - when the unit price is switched on - a non-blank unit and a parseable positive rate.
+ * The authoritative rules - the amount really is positive, the interval really is within range, the
+ * category really exists and really is active, the dates really are ordered, the unit and rate really
+ * are a pair - stay in [RecurringRepository], which refuses any write that breaks them. Duplicating
+ * those checks here would create a second copy of the rules that could drift from the tested one.
  *
  * ### Where the category list comes from
  *
- * [CategoryRepository.observeByType] re-read every time the reload counter moves, filtered to the
- * **active** expense categories. Nothing here polls: Room pushes a new list whenever a category
- * changes, so a category created in the picker's own dialog appears without this class asking again. The
- * read deliberately does not depend on anything the household types, so no keystroke reaches SQLite.
+ * [CategoryRepository.observeByType] re-read every time the reload counter moves *or the type changes*,
+ * filtered to the **active** categories of that type. Nothing here polls: Room pushes a new list
+ * whenever a category changes, so a category created in the picker's own dialog appears without this
+ * class asking again. The read deliberately does not depend on anything the household types, so no
+ * keystroke reaches SQLite.
  *
  * ### Saving
  *
@@ -97,8 +109,14 @@ class RecurringFormViewModel(
 
     init {
         viewModelScope.launch {
-            categoryReloads
-                .flatMapLatest { observeActiveExpenseCategories() }
+            combine(
+                // The *state's* type, not a second field of its own: what the picker offers and what the
+                // form says the schedule is must be one fact, and a copy here would be a second place for
+                // them to disagree.
+                state.map { it.type }.distinctUntilChanged(),
+                categoryReloads,
+            ) { type, _ -> type }
+                .flatMapLatest { type -> observeActiveCategories(type) }
                 .collect { options -> state.update { it.copy(categories = options) } }
         }
 
@@ -114,9 +132,53 @@ class RecurringFormViewModel(
         state.update { it.copy(description = value) }
     }
 
+    /**
+     * Switches the form between an expense schedule and an income one.
+     *
+     * The chosen category is dropped rather than kept: the picker has just been re-scoped to the other
+     * direction, so the category that was chosen is no longer one of the options, and keeping it would
+     * leave the form naming a category the household cannot see. The repository would refuse it too - the
+     * entry written when an occurrence is paid is filed under a category of its own type - so there is
+     * nothing here to preserve.
+     */
+    fun onTypeChange(type: TransactionType) {
+        state.update {
+            it.copy(type = type, category = null, showCategoryError = false, saveError = null)
+        }
+    }
+
     /** Records the expected amount as typed. Clears the previous complaint about it. */
     fun onAmountChange(value: String) {
         state.update { it.copy(amountInput = value, amountError = null, saveError = null) }
+    }
+
+    /**
+     * Turns the optional unit price on or off.
+     *
+     * Turning it off clears the two fields' complaints but keeps what was typed: a household who
+     * switched it off to look at something else and switched it back finds their figure still there, and
+     * nothing typed reaches the database while it is off, because [save] does not read the two fields at
+     * all unless it is on.
+     */
+    fun onUnitRateToggle(enabled: Boolean) {
+        state.update {
+            it.copy(
+                useUnitAndRate = enabled,
+                showUnitError = false,
+                rateError = null,
+                saveError = null,
+            )
+        }
+    }
+
+    /** Records what one unit is called as typed. A label, never parsed. */
+    fun onUnitChange(value: String) {
+        state.update { it.copy(unitInput = value, showUnitError = false, saveError = null) }
+    }
+
+    /** Records the price of one unit as typed. Clears the previous complaint about it. */
+    fun onRateChange(value: String) {
+        state.update { it.copy(rateInput = value, rateError = null, saveError = null) }
     }
 
     /**
@@ -199,6 +261,29 @@ class RecurringFormViewModel(
             return
         }
 
+        // Read only when the switch is on, so a figure left in a hidden field can never be written.
+        val unitLabel: String?
+        val ratePaise: Long?
+        if (current.useUnitAndRate) {
+            val unit = current.unitInput.trim()
+            if (unit.isEmpty()) {
+                state.update { it.copy(showUnitError = true, saveError = null) }
+                return
+            }
+
+            val rate = MoneyInput.parseRupeesToPaise(current.rateInput)
+            if (rate is MoneyParseResult.Problem) {
+                state.update { it.copy(rateError = rate, saveError = null) }
+                return
+            }
+
+            unitLabel = unit
+            ratePaise = (rate as MoneyParseResult.Success).paise
+        } else {
+            unitLabel = null
+            ratePaise = null
+        }
+
         val interval = parseInterval(current.intervalInput)
         if (interval is IntervalParseResult.Problem) {
             state.update { it.copy(intervalError = interval.problem, saveError = null) }
@@ -222,6 +307,8 @@ class RecurringFormViewModel(
                 isSaving = true,
                 showNameError = false,
                 amountError = null,
+                showUnitError = false,
+                rateError = null,
                 intervalError = null,
                 showCategoryError = false,
                 showEndDateError = false,
@@ -246,6 +333,8 @@ class RecurringFormViewModel(
                         endDate = endDate,
                         today = today,
                         description = current.description,
+                        unit = unitLabel,
+                        ratePaise = ratePaise,
                         now = instant(),
                     )
                     state.update { it.copy(isSaving = false, savedScheduleId = id) }
@@ -263,6 +352,8 @@ class RecurringFormViewModel(
                         endDate = endDate,
                         today = today,
                         description = current.description,
+                        unit = unitLabel,
+                        ratePaise = ratePaise,
                         now = instant(),
                     )
                     // The same id comes back as the "saved" one, so the screen leaves on success
@@ -305,15 +396,16 @@ class RecurringFormViewModel(
     }
 
     /**
-     * Creates the expense category named in the dialog and selects it for the schedule being written.
+     * Creates the category named in the dialog, of the form's current type, and selects it.
      *
      * The name stored on the selection is the *normalised* one, produced by the same
      * [CategoryEntity.normalizeName] the repository used to write the row, so the form shows exactly
      * what the database holds rather than what was typed.
      *
-     * The type is always [TransactionType.EXPENSE]: a recurring schedule is an expense, so its picker
-     * never offers - and this method can never create - an income category. That is what keeps an
-     * income category from being reached through the recurring flow at all.
+     * The type is [RecurringFormUiState.type]: a household planning their salary gets an income
+     * category offered and created, and one planning the rent gets an expense category. Creating the
+     * other type here would produce a category the *current* picker could not list, so a fresh choose
+     * could never find it again.
      */
     fun createCategory() {
         val dialog = state.value.categoryDialog ?: return
@@ -329,9 +421,10 @@ class RecurringFormViewModel(
         state.update { it.copy(categoryDialog = dialog.copy(isSaving = true, error = null)) }
 
         val name = dialog.nameInput
+        val type = state.value.type
         viewModelScope.launch {
             try {
-                val id = categories.create(name = name, type = TransactionType.EXPENSE)
+                val id = categories.create(name = name, type = type)
                 state.update {
                     it.copy(
                         category = CategoryOption(id = id, name = CategoryEntity.normalizeName(name)),
@@ -384,10 +477,23 @@ class RecurringFormViewModel(
                         editLoad = EditLoadState.Ready,
                         name = row.name,
                         description = row.description.orEmpty(),
+                        // The direction comes from the category the schedule is filed under, so this is
+                        // the schedule's own type and not a guess: the category list re-reads for it,
+                        // and the picker offers the right half of the catalogue from the first frame.
+                        type = row.categoryType,
                         // Written back the way the household would have *typed* it, so saving an
                         // unchanged schedule stores exactly the same paise again.
                         amountInput = MoneyInput.toEditableText(row.amountPaise),
-                        category = CategoryOption(id = row.categoryId, name = row.categoryName),
+                        // On only when the pair is really there: the repository stores them together or
+                        // not at all, so one without the other would be a row this app cannot write.
+                        useUnitAndRate = row.unit != null && row.ratePaise != null,
+                        unitInput = row.unit.orEmpty(),
+                        rateInput = row.ratePaise?.let(MoneyInput::toEditableText).orEmpty(),
+                        category = CategoryOption(
+                            id = row.categoryId,
+                            name = row.categoryName,
+                            iconKey = row.categoryIconKey,
+                        ),
                         frequency = row.frequency,
                         intervalInput = row.intervalCount.toString(),
                         startDate = row.startDate,
@@ -399,17 +505,18 @@ class RecurringFormViewModel(
     }
 
     /**
-     * The active expense categories, newest read first and already retired-free.
+     * The active categories of one type, newest read first and already retired-free.
      *
      * `catch` ends the flow on failure, so a broken read becomes a message with a retry rather than a
-     * spinner that never stops; [retryCategories] restarts it.
+     * spinner that never stops; [retryCategories] restarts it. A change of type restarts it too, through
+     * the same `flatMapLatest`, which is what keeps the offered list and the form's own type one fact.
      */
-    private fun observeActiveExpenseCategories(): Flow<CategoriesUiState> =
-        categories.observeByType(TransactionType.EXPENSE)
+    private fun observeActiveCategories(type: TransactionType): Flow<CategoriesUiState> =
+        categories.observeByType(type)
             .map<List<CategoryEntity>, CategoriesUiState> { rows ->
                 CategoriesUiState.Ready(
                     rows.filter { it.isActive }
-                        .map { CategoryOption(id = it.id, name = it.name) },
+                        .map { CategoryOption(id = it.id, name = it.name, iconKey = it.iconKey) },
                 )
             }
             .onStart { emit(CategoriesUiState.Loading) }

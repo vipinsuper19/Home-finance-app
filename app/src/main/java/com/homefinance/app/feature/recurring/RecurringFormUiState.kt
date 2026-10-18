@@ -6,6 +6,7 @@ import com.homefinance.app.R
 import com.homefinance.app.core.util.MoneyParseResult
 import com.homefinance.app.core.util.RecurrenceCalculator
 import com.homefinance.app.data.model.RecurrenceFrequency
+import com.homefinance.app.data.model.TransactionType
 import com.homefinance.app.feature.addtransaction.CategoriesUiState
 import com.homefinance.app.feature.addtransaction.CategoryDialogState
 import com.homefinance.app.feature.addtransaction.CategoryOption
@@ -39,9 +40,24 @@ import java.time.LocalDate
  * @param showNameError whether the last save attempt was refused for a missing name.
  * @param description free-text detail, optional. Sent as typed; the repository decides that blank
  *   means "not given" rather than storing an empty line.
+ * @param type whether this schedule is for money going out or coming in. It is *not* stored on the
+ *   schedule - the repository reads the direction from the chosen category's own type - but it is what
+ *   decides which categories the picker offers and therefore which category can be chosen at all,
+ *   exactly as it does on the ledger's own form.
  * @param amountInput the expected amount in rupees, exactly as typed. Parsed with the same exact
  *   parser the ledger's own form uses - no `Float`, no `Double`, no rounding.
- * @param category the chosen expense category, or `null` while none is chosen.
+ * @param useUnitAndRate whether the household is pricing this by unit at all ("₹60 a litre"). Off means
+ *   the two fields below are neither read nor sent, so a household who turned it off never has a
+ *   half-typed rate written to the database.
+ * @param unitInput what one unit is called, exactly as typed. A label, not a number: never parsed, and
+ *   only trimmed before it is sent.
+ * @param showUnitError whether the last save attempt was refused because the unit field was blank while
+ *   the unit price was switched on. A unit price with nothing to price it per would be a figure the
+ *   screens could not label.
+ * @param rateInput the price of one unit in rupees, exactly as typed, parsed with the same exact money
+ *   parser as [amountInput] - and by the same rule, never a `Float`.
+ * @param rateError why the typed unit price was refused, or `null`.
+ * @param category the chosen category of [type], or `null` while none is chosen.
  * @param showCategoryError whether the last save attempt was refused for a missing category.
  * @param frequency how often the schedule repeats.
  * @param intervalInput how many periods between occurrences, as typed. It is text rather than an
@@ -54,7 +70,7 @@ import java.time.LocalDate
  * @param endDate the last day an occurrence may fall on, or `null` for "until paused".
  * @param showEndDateError whether the last save attempt was refused because the last occurrence
  *   precedes the first.
- * @param categories the active **expense** categories the picker can offer, including its own loading
+ * @param categories the active categories **of [type]** the picker can offer, including its own loading
  *   and failed states.
  * @param editLoad whether the row being changed has been read yet. An edit draws nothing until it has,
  *   so the household never sees one schedule's figures under another schedule's name.
@@ -69,8 +85,14 @@ data class RecurringFormUiState(
     val name: String = "",
     val showNameError: Boolean = false,
     val description: String = "",
+    val type: TransactionType = TransactionType.EXPENSE,
     val amountInput: String = "",
     val amountError: MoneyParseResult.Problem? = null,
+    val useUnitAndRate: Boolean = false,
+    val unitInput: String = "",
+    val showUnitError: Boolean = false,
+    val rateInput: String = "",
+    val rateError: MoneyParseResult.Problem? = null,
     val category: CategoryOption? = null,
     val showCategoryError: Boolean = false,
     val frequency: RecurrenceFrequency = RecurrenceFrequency.MONTHLY,
@@ -186,7 +208,8 @@ fun parseInterval(raw: String): IntervalParseResult {
 sealed interface RecurringSaveError {
 
     /**
-     * The chosen category is gone, is not an expense category, or has been retired.
+     * The chosen category is gone, is of the wrong type for the entry being written, or has been
+     * retired.
      *
      * Only reachable on a fresh choose: a schedule already filed under a category that has since been
      * retired keeps that category and can be saved unchanged, because otherwise turning a category off

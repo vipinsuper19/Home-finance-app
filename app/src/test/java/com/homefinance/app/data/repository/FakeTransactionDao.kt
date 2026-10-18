@@ -28,6 +28,12 @@ import kotlinx.coroutines.flow.flowOf
 class FakeTransactionDao(
     private val categoryNames: Map<Long, String> = emptyMap(),
     initial: List<TransactionEntity> = emptyList(),
+    /**
+     * The marks of those categories, standing in for `categories.icon_key`. Absent means "nobody
+     * chose one", which is `null` in the projection - the same thing the real join returns for a
+     * category with no stored key.
+     */
+    private val categoryIconKeys: Map<Long, String> = emptyMap(),
 ) : TransactionDao {
 
     private val rows: MutableMap<Long, TransactionEntity> =
@@ -137,6 +143,7 @@ class FakeTransactionDao(
                 createdAt = row.createdAt,
                 updatedAt = row.updatedAt,
                 categoryName = name,
+                categoryIconKey = categoryIconKeys[row.categoryId],
             )
         }
 

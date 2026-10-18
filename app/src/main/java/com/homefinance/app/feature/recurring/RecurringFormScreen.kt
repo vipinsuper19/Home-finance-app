@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -16,6 +18,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,6 +44,7 @@ import com.homefinance.app.core.ui.component.HomeFinanceTopBar
 import com.homefinance.app.core.ui.component.StatusPane
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
 import com.homefinance.app.core.util.DateFormatter
+import com.homefinance.app.core.util.MoneyParseResult
 import com.homefinance.app.data.model.RecurrenceFrequency
 import com.homefinance.app.data.model.TransactionType
 import com.homefinance.app.feature.addtransaction.CategoriesUiState
@@ -53,6 +57,7 @@ import com.homefinance.app.feature.addtransaction.EditLoadState
 import com.homefinance.app.feature.addtransaction.FieldLabel
 import com.homefinance.app.feature.addtransaction.LabelledTextField
 import com.homefinance.app.feature.addtransaction.SaveFooter
+import com.homefinance.app.feature.addtransaction.TypeSelector
 import java.time.LocalDate
 
 /**
@@ -89,7 +94,11 @@ fun AddRecurringScreen(
         onBack = onBack,
         onNameChange = viewModel::onNameChange,
         onDescriptionChange = viewModel::onDescriptionChange,
+        onTypeChange = viewModel::onTypeChange,
         onAmountChange = viewModel::onAmountChange,
+        onUnitRateToggle = viewModel::onUnitRateToggle,
+        onUnitChange = viewModel::onUnitChange,
+        onRateChange = viewModel::onRateChange,
         onPickCategory = onPickCategory,
         onFrequencyChange = viewModel::onFrequencyChange,
         onIntervalChange = viewModel::onIntervalChange,
@@ -102,7 +111,7 @@ fun AddRecurringScreen(
 }
 
 /**
- * The form that changes an existing recurring expense.
+ * The form that changes an existing recurring schedule.
  *
  * The id is carried as an argument by the route rather than held anywhere else, so the screen reads the
  * schedule the household actually tapped. The form refuses to draw until that row has been read: showing
@@ -134,7 +143,11 @@ fun EditRecurringScreen(
         onBack = onBack,
         onNameChange = viewModel::onNameChange,
         onDescriptionChange = viewModel::onDescriptionChange,
+        onTypeChange = viewModel::onTypeChange,
         onAmountChange = viewModel::onAmountChange,
+        onUnitRateToggle = viewModel::onUnitRateToggle,
+        onUnitChange = viewModel::onUnitChange,
+        onRateChange = viewModel::onRateChange,
         onPickCategory = onPickCategory,
         onFrequencyChange = viewModel::onFrequencyChange,
         onIntervalChange = viewModel::onIntervalChange,
@@ -154,8 +167,10 @@ fun EditRecurringScreen(
  * "new category" dialog they already know. Its view model is the form's own, scoped to the form graph,
  * so a choice here *is* the form's choice and there is no result to pass back.
  *
- * The type is pinned to [TransactionType.EXPENSE]: a recurring schedule is an expense, so an income
- * category cannot be reached through this flow at all.
+ * The type is whatever the form currently says - an expense schedule is offered expense categories and
+ * an income schedule income ones - so the list this draws and the list the form validated against
+ * cannot be two different lists. The "new category" dialog inherits the same type, which is why a
+ * household who is planning their salary is offered a new *income* category rather than an expense one.
  */
 @Composable
 fun RecurringCategoryPickerScreen(
@@ -168,7 +183,7 @@ fun RecurringCategoryPickerScreen(
     CategoryPickerContent(
         categories = uiState.categories,
         selectedId = uiState.category?.id,
-        type = TransactionType.EXPENSE,
+        type = uiState.type,
         dialog = uiState.categoryDialog,
         onCategorySelected = { categoryId ->
             viewModel.onCategorySelected(categoryId)
@@ -227,7 +242,11 @@ internal fun RecurringFormContent(
     onBack: () -> Unit,
     onNameChange: (String) -> Unit,
     onDescriptionChange: (String) -> Unit,
+    onTypeChange: (TransactionType) -> Unit,
     onAmountChange: (String) -> Unit,
+    onUnitRateToggle: (Boolean) -> Unit,
+    onUnitChange: (String) -> Unit,
+    onRateChange: (String) -> Unit,
     onPickCategory: () -> Unit,
     onFrequencyChange: (RecurrenceFrequency) -> Unit,
     onIntervalChange: (String) -> Unit,
@@ -299,7 +318,11 @@ internal fun RecurringFormContent(
                 progressLabel = progressLabel,
                 onNameChange = onNameChange,
                 onDescriptionChange = onDescriptionChange,
+                onTypeChange = onTypeChange,
                 onAmountChange = onAmountChange,
+                onUnitRateToggle = onUnitRateToggle,
+                onUnitChange = onUnitChange,
+                onRateChange = onRateChange,
                 onPickCategory = onPickCategory,
                 onFrequencyChange = onFrequencyChange,
                 onIntervalChange = onIntervalChange,
@@ -346,7 +369,11 @@ private fun FormBody(
     progressLabel: String,
     onNameChange: (String) -> Unit,
     onDescriptionChange: (String) -> Unit,
+    onTypeChange: (TransactionType) -> Unit,
     onAmountChange: (String) -> Unit,
+    onUnitRateToggle: (Boolean) -> Unit,
+    onUnitChange: (String) -> Unit,
+    onRateChange: (String) -> Unit,
     onPickCategory: () -> Unit,
     onFrequencyChange: (RecurrenceFrequency) -> Unit,
     onIntervalChange: (String) -> Unit,
@@ -368,6 +395,10 @@ private fun FormBody(
                 .padding(top = 8.dp, bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            // First, because it changes what the rest of the form is *about*: switching to Income
+            // swaps the category list and clears any category chosen from the other one.
+            TypeSelector(selected = uiState.type, onTypeChange = onTypeChange)
+
             LabelledTextField(
                 label = stringResource(R.string.recurring_form_name_label),
                 value = uiState.name,
@@ -390,7 +421,7 @@ private fun FormBody(
 
             CategoryField(
                 category = uiState.category,
-                type = TransactionType.EXPENSE,
+                type = uiState.type,
                 showError = uiState.showCategoryError,
                 onClick = onPickCategory,
             )
@@ -402,6 +433,17 @@ private fun FormBody(
                 placeholder = stringResource(R.string.add_transaction_amount_placeholder),
                 error = uiState.amountError?.let { stringResource(it.messageRes()) },
                 keyboardType = KeyboardType.Decimal,
+            )
+
+            UnitAndRate(
+                useUnitAndRate = uiState.useUnitAndRate,
+                unitInput = uiState.unitInput,
+                showUnitError = uiState.showUnitError,
+                rateInput = uiState.rateInput,
+                rateError = uiState.rateError,
+                onToggle = onUnitRateToggle,
+                onUnitChange = onUnitChange,
+                onRateChange = onRateChange,
             )
 
             FrequencySelector(
@@ -443,6 +485,72 @@ private fun FormBody(
             progressLabel = progressLabel,
             onClick = onSave,
         )
+    }
+}
+
+/**
+ * The optional unit price: one switch, and the two fields it reveals directly beneath it.
+ *
+ * "₹60 a litre" is the figure the household actually reads off a milk bill, and asking for it here is
+ * what lets the list print that instead of a total they would have to work out. It is optional because
+ * most schedules are not priced by unit at all, and it is a *pair*: a rate with nothing to price it per
+ * would be a figure no screen could label, which is why the repository refuses one without the other.
+ *
+ * The fields appear next to the switch that asked for them rather than up beside the amount, because
+ * that is where the household is looking when they turn it on - the same reason the ledger's own form
+ * puts quantity and rate in this position.
+ *
+ * The expected amount is *not* recalculated from the rate: there is no quantity here to multiply it by,
+ * and only the household knows whether the next litre is one of twenty or the only one.
+ */
+@Composable
+private fun UnitAndRate(
+    useUnitAndRate: Boolean,
+    unitInput: String,
+    showUnitError: Boolean,
+    rateInput: String,
+    rateError: MoneyParseResult.Problem?,
+    onToggle: (Boolean) -> Unit,
+    onUnitChange: (String) -> Unit,
+    onRateChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Switch(checked = useUnitAndRate, onCheckedChange = onToggle)
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = stringResource(R.string.recurring_form_unit_rate_switch),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        if (useUnitAndRate) {
+            LabelledTextField(
+                label = stringResource(R.string.recurring_form_unit_label),
+                value = unitInput,
+                onValueChange = onUnitChange,
+                placeholder = stringResource(R.string.recurring_form_unit_placeholder),
+                error = if (showUnitError) {
+                    stringResource(R.string.recurring_form_unit_error)
+                } else {
+                    null
+                },
+            )
+
+            LabelledTextField(
+                label = stringResource(R.string.recurring_form_rate_label),
+                value = rateInput,
+                onValueChange = onRateChange,
+                placeholder = stringResource(R.string.recurring_form_rate_placeholder),
+                error = rateError?.let { stringResource(it.rateMessageRes()) },
+                keyboardType = KeyboardType.Decimal,
+            )
+        }
     }
 }
 
@@ -552,24 +660,31 @@ private fun RecurringFormContentPreview() {
     HomeFinanceTheme {
         RecurringFormContent(
             uiState = RecurringFormUiState(
-                name = "Shop rent",
+                name = "Milk",
                 description = "Ground floor, paid by UPI",
                 amountInput = "15000",
-                category = CategoryOption(id = 1L, name = "Rent"),
+                useUnitAndRate = true,
+                unitInput = "litre",
+                rateInput = "60",
+                category = CategoryOption(id = 1L, name = "Milk"),
                 frequency = RecurrenceFrequency.MONTHLY,
                 intervalInput = "1",
                 startDate = LocalDate.of(2026, 11, 5),
                 categories = CategoriesUiState.Ready(
-                    options = listOf(CategoryOption(id = 1L, name = "Rent")),
+                    options = listOf(CategoryOption(id = 1L, name = "Milk")),
                 ),
             ),
-            title = "New recurring expense",
+            title = "New recurring schedule",
             actionLabel = "Save schedule",
             progressLabel = "Saving...",
             onBack = {},
             onNameChange = {},
             onDescriptionChange = {},
+            onTypeChange = {},
             onAmountChange = {},
+            onUnitRateToggle = {},
+            onUnitChange = {},
+            onRateChange = {},
             onPickCategory = {},
             onFrequencyChange = {},
             onIntervalChange = {},

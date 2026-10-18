@@ -70,8 +70,12 @@ interface RecurringDao {
     suspend fun getSchedulesWithStatus(status: RecurringScheduleStatus): List<RecurringScheduleEntity>
 
     /**
-     * Every schedule, with its category's name and the date it next falls due - the Recurring tab's
-     * list.
+     * Every schedule, with its category's name and type and the date it next falls due - the
+     * Recurring tab's list.
+     *
+     * The join carries the category's **type** because that is the schedule's direction - see
+     * [RecurringScheduleWithProgress.categoryType] - and the schedule's own unit price, so the list
+     * can filter by direction and print "Daily • ₹60/litre" without a second read per row.
      *
      * Ordered by how much attention each schedule wants: active ones first, then paused, then
      * retired; and within a group the soonest due date first, with schedules that have nothing
@@ -85,6 +89,8 @@ interface RecurringDao {
                s.description       AS description,
                s.category_id       AS category_id,
                s.amount_paise      AS amount_paise,
+               s.unit              AS unit,
+               s.rate_paise        AS rate_paise,
                s.frequency         AS frequency,
                s.interval_count    AS interval_count,
                s.start_date        AS start_date,
@@ -94,6 +100,8 @@ interface RecurringDao {
                s.created_at        AS created_at,
                s.updated_at        AS updated_at,
                c.name              AS category_name,
+               c.type              AS category_type,
+               c.icon_key          AS category_icon_key,
                (SELECT MIN(o.due_date)
                   FROM recurring_occurrences AS o
                  WHERE o.schedule_id = s.id
@@ -123,6 +131,8 @@ interface RecurringDao {
                s.description       AS description,
                s.category_id       AS category_id,
                s.amount_paise      AS amount_paise,
+               s.unit              AS unit,
+               s.rate_paise        AS rate_paise,
                s.frequency         AS frequency,
                s.interval_count    AS interval_count,
                s.start_date        AS start_date,
@@ -132,6 +142,8 @@ interface RecurringDao {
                s.created_at        AS created_at,
                s.updated_at        AS updated_at,
                c.name              AS category_name,
+               c.type              AS category_type,
+               c.icon_key          AS category_icon_key,
                (SELECT MIN(o.due_date)
                   FROM recurring_occurrences AS o
                  WHERE o.schedule_id = s.id
@@ -228,6 +240,9 @@ interface RecurringDao {
      * An `INNER JOIN` on both parents, because both foreign keys are non-null and neither parent is
      * ever deleted: there is no such thing as an occurrence without a schedule, and no schedule
      * without a category.
+     *
+     * The join carries the category's **type** as well, because that is the direction of the money and
+     * the payment sheet has to name it - see [RecurringOccurrenceDetail.categoryType].
      */
     @Query(
         """
@@ -241,7 +256,9 @@ interface RecurringDao {
                o.updated_at     AS updated_at,
                s.name           AS schedule_name,
                s.category_id    AS category_id,
-               c.name           AS category_name
+               c.name           AS category_name,
+               c.type           AS category_type,
+               c.icon_key       AS category_icon_key
         FROM recurring_occurrences AS o
         INNER JOIN recurring_schedules AS s ON s.id = o.schedule_id
         INNER JOIN categories AS c ON c.id = s.category_id

@@ -9,7 +9,6 @@ import com.homefinance.app.data.local.relation.RecurringScheduleWithProgress
 import com.homefinance.app.data.model.RecurrenceFrequency
 import com.homefinance.app.data.model.RecurringOccurrenceStatus
 import com.homefinance.app.data.model.RecurringScheduleStatus
-import com.homefinance.app.data.model.TransactionType
 import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.flow.Flow
@@ -29,16 +28,22 @@ import kotlinx.coroutines.flow.Flow
  *    - through [markOccurrencePaid], which is the single place in the app where a plan becomes
  *    spending.
  *
+ * A schedule's *direction* is its category's own type, and there is deliberately no second copy of
+ * it: an expense category makes an expense schedule and an income category makes an income one, and
+ * the entry [markOccurrencePaid] writes is filed under that same category. So a salary can be planned
+ * exactly as rent is, and paying one of its occurrences records income rather than an expense.
+ *
  * That is why [generateDueOccurrences] can run on every visit to the Recurring tab without any risk
  * to the household's totals: it can only ever create expectations.
  *
  * ### What the database cannot enforce, and this class does
  *
  * Room cannot express "the amount is positive", "the interval is a sane whole number", "the end date
- * is not before the start" or "the category is an **expense** category", so all four are checked here,
- * immediately before every write (see [requireValidSchedule]). The rest is left to the schema, which
- * is stronger: the unique index on `(schedule_id, due_date)` is the authority on duplicates, and the
- * conditional `UPDATE`s on the DAO are the authority on "was this already settled".
+ * is not before the start", "the unit price is positive and complete" or "the category exists and is
+ * active", so all of them are checked here, immediately before every write (see
+ * [requireValidSchedule]). The rest is left to the schema, which is stronger: the unique index on
+ * `(schedule_id, due_date)` is the authority on duplicates, and the conditional `UPDATE`s on the DAO
+ * are the authority on "was this already settled".
  *
  * ### Why paying is one transaction, and why it is here
  *
@@ -53,7 +58,7 @@ import kotlinx.coroutines.flow.Flow
  *
  * ### Editing a schedule does not rewrite its history
  *
- * Changing the name, category, amount, frequency or dates of a schedule:
+ * Changing the name, category, amount, unit price, frequency or dates of a schedule:
  *
  *  - **never touches a paid or a skipped occurrence**, and never touches the transactions they link
  *    to;
@@ -119,11 +124,16 @@ class RecurringRepository(
      *
      * @param amountPaise the expected amount, positive, in paise.
      * @param description optional free text; trimmed, and stored as `null` when blank.
+     * @param unit what one unit is called ("litre"), or `null` when the household did not price it by
+     *   unit. Trimmed, and stored as `null` when blank, exactly as [description] is.
+     * @param ratePaise the price of one [unit], positive, in paise, or `null`. Given with [unit] or
+     *   not at all.
      * @param today the household's current local calendar day, used to decide how far ahead to
      *   generate.
      * @throws IllegalArgumentException if the name is blank, the amount is not positive, the interval
-     *   is outside `1..`[RecurrenceCalculator.MAX_INTERVAL], the end date is before the start date, or
-     *   the category does not exist, is not an expense category, or has been retired.
+     *   is outside `1..`[RecurrenceCalculator.MAX_INTERVAL], the end date is before the start date,
+     *   the category does not exist or has been retired, or exactly one of [unit] and [ratePaise] was
+     *   given, or the rate is not positive.
      */
     suspend fun createSchedule(
         name: String,
@@ -135,14 +145,20 @@ class RecurringRepository(
         endDate: LocalDate?,
         today: LocalDate,
         description: String? = null,
+        unit: String? = null,
+        ratePaise: Long? = null,
         now: Instant = Instant.now(),
     ): Long {
+        val normalizedUnit = unit.normalizedOrNull()
+
         requireValidSchedule(
             categoryId = categoryId,
             amountPaise = amountPaise,
             intervalCount = intervalCount,
             startDate = startDate,
             endDate = endDate,
+            unit = normalizedUnit,
+            ratePaise = ratePaise,
         )
 
         val schedule = RecurringScheduleEntity(
@@ -150,6 +166,8 @@ class RecurringRepository(
             description = description.normalizedOrNull(),
             categoryId = categoryId,
             amountPaise = amountPaise,
+            unit = normalizedUnit,
+            ratePaise = ratePaise,
             frequency = frequency,
             intervalCount = intervalCount,
             startDate = startDate,
@@ -189,9 +207,12 @@ class RecurringRepository(
         endDate: LocalDate?,
         today: LocalDate,
         description: String? = null,
+        unit: String? = null,
+        ratePaise: Long? = null,
         now: Instant = Instant.now(),
     ): Boolean {
         val existing = recurringDao.getScheduleById(id) ?: return false
+        val normalizedUnit = unit.normalizedOrNull()
 
         requireValidSchedule(
             categoryId = categoryId,
@@ -199,6 +220,8 @@ class RecurringRepository(
             intervalCount = intervalCount,
             startDate = startDate,
             endDate = endDate,
+            unit = normalizedUnit,
+            ratePaise = ratePaise,
             // A category the schedule is already filed under may keep it even if it has since been
             // retired: the picker does not offer retired categories, but a schedule must not become
             // uneditable because a category was turned off after it was written. Any *other*
@@ -211,6 +234,8 @@ class RecurringRepository(
             description = description.normalizedOrNull(),
             categoryId = categoryId,
             amountPaise = amountPaise,
+            unit = normalizedUnit,
+            ratePaise = ratePaise,
             frequency = frequency,
             intervalCount = intervalCount,
             startDate = startDate,
@@ -345,14 +370,15 @@ class RecurringRepository(
     }
 
     /**
-     * Records the household's payment of one occurrence: writes the actual expense and links the two
+     * Records the household's payment of one occurrence: writes the actual entry and links the two
      * together, or writes nothing at all.
      *
      * ### What it writes
      *
-     * An **expense** for [amountPaise], filed under the schedule's category, dated the occurrence's
-     * own due date, described with the schedule's name. The rules for that row - a positive amount, a
-     * category that exists and is an expense category - are enforced by
+     * An entry for [amountPaise], filed under the schedule's category and therefore of **that
+     * category's own type** - income for an income schedule, an expense for an expense one - dated
+     * the occurrence's own due date, described with the schedule's name. The rules for that row - a
+     * positive amount, a category that exists and is of the entry's type - are enforced by
      * [TransactionRepository.add], which this deliberately goes through rather than around.
      *
      * ### Why the amount is an argument
@@ -361,13 +387,22 @@ class RecurringRepository(
      * passes what was actually paid. The screens default it to the occurrence's expected amount, and
      * validate it with the same exact-parsing rule the add form uses.
      *
+     * ### Why the unit price is *not* carried into the entry
+     *
+     * The schedule's [RecurringScheduleEntity.unit] and [RecurringScheduleEntity.ratePaise] describe
+     * what the household expects to buy and at what price; the ledger records what was actually paid,
+     * which may be a different quantity of it. Copying a rate across without the quantity that made
+     * the amount would put two figures on the entry that do not multiply out - which is exactly what
+     * [TransactionRepository] refuses to store - so the rate stays where the household is going to
+     * read it, on the plan.
+     *
      * ### Idempotence, in three layers
      *
      *  1. the occurrence is re-read inside the transaction and a non-pending one is refused before
      *     anything is written;
      *  2. the link is a conditional `UPDATE ... WHERE status = 'PENDING'`, so if two payments race,
      *     the loser changes `0` rows;
-     *  3. when that happens the whole transaction is rolled back - the loser's expense is undone -
+     *  3. when that happens the whole transaction is rolled back - the loser's entry is undone -
      *     and the caller is told the occurrence was already settled rather than shown a second
      *     payment. That is the one place this class deliberately throws to abort a write.
      *
@@ -392,8 +427,17 @@ class RecurringRepository(
             val schedule = recurringDao.getScheduleById(occurrence.scheduleId)
                 ?: return@inTransaction MarkPaidOutcome.OccurrenceNotFound
 
+            // Also a net: the schedule's category is a non-null foreign key to a table whose rows are
+            // retired rather than deleted. It is read here because the category's *type* is the
+            // direction of the money, and the entry being written has to match it.
+            val category = categories.getById(schedule.categoryId)
+                ?: throw IllegalArgumentException(
+                    "No category with id ${schedule.categoryId}, so occurrence $occurrenceId cannot " +
+                        "be paid",
+                )
+
             val transactionId = transactions.add(
-                type = TransactionType.EXPENSE,
+                type = category.type,
                 amountPaise = amountPaise,
                 categoryId = schedule.categoryId,
                 transactionDate = occurrence.dueDate,
@@ -426,8 +470,18 @@ class RecurringRepository(
      * that span more than one row, the schema holds everything a single row can state.
      *
      * The name is validated by [RecurringScheduleEntity.requireValidName] by the callers, so that the
-     * normalised value it returns is the one that gets stored rather than a second normalisation.
+     * normalised value it returns is the one that gets stored rather than a second normalisation - and
+     * the same goes for [unit], which the callers have already trimmed and blanked.
      *
+     * ### Why the category's *type* is not checked here
+     *
+     * Because there is nothing to check: an expense category makes an expense schedule and an income
+     * category makes an income one, and both are legitimate. The direction is read from the category
+     * wherever it is needed - the list, the details screen, and the entry [markOccurrencePaid] writes -
+     * so a schedule cannot be filed under a category of the "wrong" type: it simply *is* that type.
+     *
+     * @param unit the already-normalised unit label, or `null`.
+     * @param ratePaise the already-parsed price of one unit, or `null`.
      * @param allowRetiredCategory see [updateSchedule]: a schedule may keep the category it is already
      *   filed under even after that category was retired.
      */
@@ -437,11 +491,13 @@ class RecurringRepository(
         intervalCount: Int,
         startDate: LocalDate,
         endDate: LocalDate?,
+        unit: String? = null,
+        ratePaise: Long? = null,
         allowRetiredCategory: Boolean = false,
     ) {
         require(amountPaise > 0L) {
-            "A recurring expense must expect a positive amount; the direction of the money is " +
-                "carried by the transaction it records, not by a sign, so $amountPaise paise is " +
+            "A recurring schedule must expect a positive amount; the direction of the money is " +
+                "carried by the category it is filed under, not by a sign, so $amountPaise paise is " +
                 "always a bug"
         }
         require(intervalCount in 1..RecurrenceCalculator.MAX_INTERVAL) {
@@ -451,20 +507,23 @@ class RecurringRepository(
         require(endDate == null || !endDate.isBefore(startDate)) {
             "A schedule cannot end before it starts: start $startDate, end $endDate"
         }
+        require((unit == null) == (ratePaise == null)) {
+            "A unit price is a rate and what it is per unit, so they are recorded together or not " +
+                "at all: got unit=$unit, ratePaise=$ratePaise"
+        }
+        require(ratePaise == null || ratePaise > 0L) {
+            "A unit price must be positive; $ratePaise paise for one $unit is always a bug"
+        }
 
         val category = categories.getById(categoryId)
             ?: throw IllegalArgumentException(
-                "No category with id $categoryId; a recurring expense must be filed under an " +
+                "No category with id $categoryId; a recurring schedule must be filed under an " +
                     "existing category",
             )
 
-        require(category.type == TransactionType.EXPENSE) {
-            "Category '${category.name}' is a ${category.type} category, so it cannot be the " +
-                "category of an expense schedule"
-        }
         require(allowRetiredCategory || category.isActive) {
             "Category '${category.name}' has been retired, so it cannot be chosen for new recurring " +
-                "expenses"
+                "schedules"
         }
     }
 

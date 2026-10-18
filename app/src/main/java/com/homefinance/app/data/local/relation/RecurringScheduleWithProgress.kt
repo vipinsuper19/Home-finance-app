@@ -3,6 +3,7 @@ package com.homefinance.app.data.local.relation
 import androidx.room.ColumnInfo
 import com.homefinance.app.data.model.RecurrenceFrequency
 import com.homefinance.app.data.model.RecurringScheduleStatus
+import com.homefinance.app.data.model.TransactionType
 import java.time.Instant
 import java.time.LocalDate
 
@@ -38,6 +39,10 @@ import java.time.LocalDate
  * @param categoryName the name of the category occurrences will be filed under. `INNER JOIN`, because
  *   a schedule's category is a non-null foreign key to a table whose rows are retired rather than
  *   deleted - there is no such thing as a schedule without a category.
+ * @param categoryType that category's own type, which is the *direction of the money*: an expense
+ *   category makes this an expense schedule and an income category makes it an income one. Read here
+ *   rather than stored on the schedule, because the category is the authority and a copy would be a
+ *   second place for the direction to be wrong.
  */
 data class RecurringScheduleWithProgress(
     @ColumnInfo(name = "id")
@@ -54,6 +59,14 @@ data class RecurringScheduleWithProgress(
 
     @ColumnInfo(name = "amount_paise")
     val amountPaise: Long,
+
+    /** What one unit is called ("litre"), or `null` when the household did not price it by unit. */
+    @ColumnInfo(name = "unit")
+    val unit: String? = null,
+
+    /** The price of one [unit] in paise, or `null`. Recorded with [unit] or not at all. */
+    @ColumnInfo(name = "rate_paise")
+    val ratePaise: Long? = null,
 
     @ColumnInfo(name = "frequency")
     val frequency: RecurrenceFrequency,
@@ -84,4 +97,16 @@ data class RecurringScheduleWithProgress(
 
     @ColumnInfo(name = "category_name")
     val categoryName: String,
+
+    /** The category's own type: which way the money moves when an occurrence is paid. */
+    @ColumnInfo(name = "category_type")
+    val categoryType: TransactionType,
+
+    /**
+     * The mark the category is drawn with, or `null` when nobody ever chose one - see
+     * [com.homefinance.app.data.model.CategoryIconKey]. Carried beside the name so a schedule's row
+     * draws the same picture the picker does, without a second read per row.
+     */
+    @ColumnInfo(name = "category_icon_key")
+    val categoryIconKey: String? = null,
 )

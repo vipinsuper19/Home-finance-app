@@ -162,6 +162,12 @@ data class TransactionListItem(
     val transactionDate: LocalDate,
     val amountPaise: Long,
     val type: TransactionType,
+    /**
+     * The category's stored mark, or `null` when nobody chose one. Passed straight through to the
+     * row's `CategoryMark`, which falls back to a mark derived from [categoryName] - the same picture
+     * the picker shows for the same category.
+     */
+    val categoryIconKey: String? = null,
 ) {
 
     /**
@@ -182,6 +188,7 @@ fun TransactionWithCategory.toListItem(): TransactionListItem = TransactionListI
     transactionDate = transactionDate,
     amountPaise = amountPaise,
     type = type,
+    categoryIconKey = categoryIconKey,
 )
 
 /**

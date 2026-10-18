@@ -1,17 +1,21 @@
 package com.homefinance.app.feature.recurring
 
 import androidx.annotation.StringRes
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import com.homefinance.app.R
+import com.homefinance.app.core.util.CurrencyFormatter
 import com.homefinance.app.core.util.MoneyParseResult
 import com.homefinance.app.data.local.relation.RecurringOccurrenceDetail
 import com.homefinance.app.data.local.relation.RecurringScheduleWithProgress
 import com.homefinance.app.data.model.RecurrenceFrequency
 import com.homefinance.app.data.model.RecurringOccurrenceStatus
 import com.homefinance.app.data.model.RecurringScheduleStatus
+import com.homefinance.app.data.model.TransactionType
 import java.time.LocalDate
 
 /**
@@ -146,7 +150,11 @@ internal fun RecurringScheduleWithProgress.toCard(today: LocalDate): RecurringSc
         name = name,
         description = description,
         categoryName = categoryName,
+        categoryType = categoryType,
+        categoryIconKey = categoryIconKey,
         amountPaise = amountPaise,
+        unit = unit,
+        ratePaise = ratePaise,
         frequency = frequency,
         intervalCount = intervalCount,
         status = status,
@@ -176,6 +184,8 @@ internal fun RecurringOccurrenceDetail.toItem(today: LocalDate): RecurringOccurr
         id = id,
         scheduleName = scheduleName,
         categoryName = categoryName,
+        categoryType = categoryType,
+        categoryIconKey = categoryIconKey,
         dueDate = dueDate,
         amountPaise = amountPaise,
         state = occurrenceDisplayState(status = status, dueDate = dueDate, today = today),
@@ -198,6 +208,59 @@ fun frequencySummary(frequency: RecurrenceFrequency, intervalCount: Int): String
     }
 
 /**
+ * The figure a schedule prints: its unit price when the household gave one, its expected amount
+ * otherwise.
+ *
+ * "₹60.00 / litre" is the *plan's* price for one unit, which is the figure the household reads off
+ * the bill and the one the mock-up draws ("Daily • ₹60/litre"). A schedule that was not priced by
+ * unit prints its expected amount, exactly as every schedule did before unit prices existed. The two
+ * are never added together and neither is derived from the other - see
+ * [com.homefinance.app.data.local.entity.RecurringScheduleEntity] for why the amount stays the
+ * authority.
+ *
+ * Resolved in the composable for the same reason [frequencySummary] is: the joined string is a
+ * translation, so it belongs where `stringResource` can reach it, and the state keeps only the two
+ * facts the database holds.
+ */
+@Composable
+internal fun rateOrAmountText(amountPaise: Long, ratePaise: Long?, unit: String?): String =
+    if (ratePaise != null && unit != null) {
+        stringResource(
+            R.string.recurring_rate_per_unit,
+            CurrencyFormatter.formatInr(ratePaise),
+            unit,
+        )
+    } else {
+        CurrencyFormatter.formatInr(amountPaise)
+    }
+
+/**
+ * The one-word name of [this] direction: "Income" or "Expense".
+ *
+ * The ledger's own two words, deliberately - a household who has learned what they mean on the
+ * transaction form should not have to learn a second pair here - so this delegates to the form's
+ * strings rather than restating them.
+ */
+@StringRes
+internal fun TransactionType.labelRes(): Int = when (this) {
+    TransactionType.INCOME -> R.string.add_transaction_type_income
+    TransactionType.EXPENSE -> R.string.add_transaction_type_expense
+}
+
+/**
+ * Income is emerald and expenses are red - the same convention the ledger, the transaction details
+ * screen and the Home screen's summary cards use, so an amount keeps its meaning wherever it appears.
+ *
+ * It colours an amount or an accent; it never carries a meaning on its own, and every amount drawn
+ * with it is also labelled in words.
+ */
+@Composable
+internal fun amountColorFor(type: TransactionType): Color = when (type) {
+    TransactionType.INCOME -> MaterialTheme.colorScheme.primary
+    TransactionType.EXPENSE -> MaterialTheme.colorScheme.error
+}
+
+/**
  * The sentence under a rejected amount.
  *
  * The copy is the add form's own, deliberately: "the amount must be more than zero" is the same fact
@@ -213,4 +276,21 @@ internal fun MoneyParseResult.Problem.messageRes(): Int = when (this) {
         R.string.add_transaction_amount_error_too_precise
     MoneyParseResult.Problem.NotPositive -> R.string.add_transaction_amount_error_not_positive
     MoneyParseResult.Problem.TooLarge -> R.string.add_transaction_amount_error_too_large
+}
+
+/**
+ * The sentence under a rejected unit price.
+ *
+ * The same divide as [messageRes], and the same wording policy: these are the ledger's own rate
+ * strings, because "enter a valid rate, for example 60 or 60.50" is the same fact whether the rate is
+ * being recorded on one purchase or on a standing order. The one thing that differs is the blank case,
+ * which must not say "enter an amount" while the amount field two lines above is already filled in.
+ */
+@StringRes
+internal fun MoneyParseResult.Problem.rateMessageRes(): Int = when (this) {
+    MoneyParseResult.Problem.Blank -> R.string.add_transaction_rate_error_blank
+    MoneyParseResult.Problem.NotANumber -> R.string.add_transaction_rate_error_not_a_number
+    MoneyParseResult.Problem.TooManyDecimalPlaces -> R.string.add_transaction_rate_error_too_precise
+    MoneyParseResult.Problem.NotPositive -> R.string.add_transaction_rate_error_not_positive
+    MoneyParseResult.Problem.TooLarge -> R.string.add_transaction_rate_error_too_large
 }

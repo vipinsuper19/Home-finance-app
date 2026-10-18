@@ -27,6 +27,7 @@ import com.homefinance.app.R
 import com.homefinance.app.core.ui.component.HomeFinanceTopBar
 import com.homefinance.app.core.ui.component.StatusPane
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
+import com.homefinance.app.data.model.TransactionType
 import java.time.LocalDate
 
 /**
@@ -158,6 +159,7 @@ internal fun RecurringOccurrencesContent(
                                     dueDate = occurrence.dueDate,
                                     amountPaise = occurrence.amountPaise,
                                     state = occurrence.state,
+                                    type = occurrence.categoryType,
                                     transactionRemoved = occurrence.transactionRemoved,
                                     onPay = { onRequestPay(occurrence) },
                                     onSkip = { onRequestSkip(occurrence) },
@@ -196,6 +198,7 @@ private fun RecurringOccurrencesContentPreview() {
                         id = 3L,
                         scheduleName = "Shop rent",
                         categoryName = "Rent",
+                        categoryType = TransactionType.EXPENSE,
                         dueDate = LocalDate.of(2026, 10, 5),
                         amountPaise = 1_500_000L,
                         state = OccurrenceDisplayState.OVERDUE,
@@ -205,6 +208,7 @@ private fun RecurringOccurrencesContentPreview() {
                         id = 2L,
                         scheduleName = "Shop rent",
                         categoryName = "Rent",
+                        categoryType = TransactionType.EXPENSE,
                         dueDate = LocalDate.of(2026, 9, 5),
                         amountPaise = 1_500_000L,
                         state = OccurrenceDisplayState.PAID,
@@ -214,6 +218,7 @@ private fun RecurringOccurrencesContentPreview() {
                         id = 1L,
                         scheduleName = "Shop rent",
                         categoryName = "Rent",
+                        categoryType = TransactionType.EXPENSE,
                         dueDate = LocalDate.of(2026, 8, 5),
                         amountPaise = 1_500_000L,
                         state = OccurrenceDisplayState.SKIPPED,

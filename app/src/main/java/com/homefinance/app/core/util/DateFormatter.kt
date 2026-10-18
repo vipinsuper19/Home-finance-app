@@ -16,6 +16,12 @@ private const val MONTH_PATTERN = "MMM yyyy"
 /** Day, month, year, then the time on a 12-hour clock - for example `14 Oct 2026, 10:30 AM`. */
 private const val TIMESTAMP_PATTERN = "d MMM yyyy, h:mm a"
 
+/** The abbreviated month name alone - for example `Oct`. */
+private const val MONTH_NAME_PATTERN = "MMM"
+
+/** The weekday alone - for example `Thursday`. */
+private const val WEEKDAY_PATTERN = "EEEE"
+
 /**
  * Formats the calendar dates a household reads: the day a transaction's money moved.
  *
@@ -54,6 +60,25 @@ object DateFormatter {
      */
     fun formatMonth(yearMonth: YearMonth, locale: Locale = Locale.getDefault()): String =
         DateTimeFormatter.ofPattern(MONTH_PATTERN, locale).format(yearMonth)
+
+    /**
+     * Formats the abbreviated month a date falls in - for example `Oct`.
+     *
+     * The month on its own, for a badge that prints the day above it and the month below: the two are
+     * read together, so the year would be one fact too many and the day is the one being looked for.
+     * Localized, and pinned to a name rather than a number, for the same reasons [format] gives.
+     */
+    fun formatShortMonth(date: LocalDate, locale: Locale = Locale.getDefault()): String =
+        DateTimeFormatter.ofPattern(MONTH_NAME_PATTERN, locale).format(date)
+
+    /**
+     * Formats the day of the week a date falls on - for example `Thursday`.
+     *
+     * Spelled out rather than abbreviated: the household is checking a due date against the week they
+     * have in front of them, and "Thu" has to be expanded before it can be compared with anything.
+     */
+    fun formatWeekday(date: LocalDate, locale: Locale = Locale.getDefault()): String =
+        DateTimeFormatter.ofPattern(WEEKDAY_PATTERN, locale).format(date)
 
     /**
      * Formats an **audit** timestamp - when a row was first written or last changed - for example

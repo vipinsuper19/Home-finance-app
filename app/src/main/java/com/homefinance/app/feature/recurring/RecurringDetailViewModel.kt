@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
  * occurrence of it, newest first. Nothing here polls and nothing here re-queries after a write. Recording
  * a payment, skipping an occurrence, pausing or stopping all write to the database, and these queries are
  * what push the result back. That is why nothing in this class has to refresh anything, and why the
- * settle dialogs report no result through navigation.
+ * settle flows report no result through navigation.
  *
  * ### What it does *not* do
  *
@@ -72,7 +72,7 @@ class RecurringDetailViewModel(
      */
     private val occurrenceActions = OccurrenceActionsController(repository)
 
-    /** The open "mark as paid" dialog, or `null` when it is closed. */
+    /** The open payment sheet, or `null` when it is closed. */
     val pay: StateFlow<PayOccurrenceState?> = occurrenceActions.pay
 
     /** The open "skip this occurrence" dialog, or `null` when it is closed. */
@@ -125,7 +125,7 @@ class RecurringDetailViewModel(
         runAction { repository.retire(scheduleId) }
     }
 
-    /** Opens the payment dialog for [occurrence]. Nothing is written until the household confirms. */
+    /** Opens the payment sheet for [occurrence]. Nothing is written until the household confirms. */
     fun requestPay(occurrence: RecurringOccurrenceItem) {
         occurrenceActions.requestPay(occurrence.toSettleTarget())
     }
@@ -134,7 +134,7 @@ class RecurringDetailViewModel(
         occurrenceActions.onPayAmountChange(value)
     }
 
-    /** Records the payment. The dialog closes on success; a refusal is shown inside it. */
+    /** Records the payment. The sheet closes on success; a refusal is shown inside it. */
     fun confirmPay() {
         viewModelScope.launch { occurrenceActions.confirmPay() }
     }
@@ -191,6 +191,15 @@ class RecurringDetailViewModel(
                     outstanding = items.filter { !it.state.isSettled() }.minByOrNull { it.dueDate },
                     recentOccurrences = items.take(RECENT_OCCURRENCE_COUNT),
                     occurrenceCount = items.size,
+                    today = today,
+                    paidCount = items.count { it.state == OccurrenceDisplayState.PAID },
+                    // Due and upcoming are counted together: a date that is due today is not late, and
+                    // the three figures have to add up with the rows the household can see.
+                    upcomingCount = items.count {
+                        it.state == OccurrenceDisplayState.UPCOMING ||
+                            it.state == OccurrenceDisplayState.DUE
+                    },
+                    overdueCount = items.count { it.state == OccurrenceDisplayState.OVERDUE },
                     actionError = failure,
                 )
             }

@@ -184,9 +184,21 @@ sealed interface CategoriesUiState {
     data class Failed(val cause: Throwable) : CategoriesUiState
 }
 
-/** One selectable category: the id the ledger stores and the name the picker offers. */
+/**
+ * One selectable category: the id the ledger stores, the name the picker offers, and the mark it is
+ * drawn with.
+ *
+ * The mark travels with the option rather than being looked up when the row is drawn: the picker and
+ * the form already hold the whole category row, and a second read per option to find a picture would
+ * be the classic N+1 query for something purely decorative.
+ */
 @Immutable
-data class CategoryOption(val id: Long, val name: String)
+data class CategoryOption(
+    val id: Long,
+    val name: String,
+    /** The category's stored mark, or `null` when nobody chose one - see `CategoryIconKey`. */
+    val iconKey: String? = null,
+)
 
 /** Why a save attempt failed. */
 @Immutable

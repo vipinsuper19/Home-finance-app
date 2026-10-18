@@ -6,6 +6,8 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.homefinance.app.data.local.migration.MIGRATION_1_2
 import com.homefinance.app.data.local.migration.MIGRATION_2_3
 import com.homefinance.app.data.local.migration.MIGRATION_3_4
+import com.homefinance.app.data.local.migration.MIGRATION_4_5
+import com.homefinance.app.data.local.migration.MIGRATION_5_6
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -227,11 +229,13 @@ class HomeFinanceDatabaseMigrationTest {
     }
 
     @Test
-    fun migratingAllTheWayFrom1To4KeepsSettingsAndLandsOnTheCurrentSchema() {
+    fun migratingFrom1To4KeepsSettingsAndValidatesAgainstTheVersion4Schema() {
         createVersion1DatabaseWithSettings()
 
-        // The whole chain a device running since the first build would walk, ending on the schema the app
-        // actually ships - validated against the exported 4.json.
+        // The whole chain a device running since the first build would have walked to reach version 4,
+        // validated against the exported 4.json. It is kept now that version 5 is current because it
+        // is the only test that validates the four earlier migrations *between themselves*, with
+        // 4 -> 5 taken out of the picture.
         helper.runMigrationsAndValidate(
             DATABASE_NAME,
             4,
@@ -239,6 +243,187 @@ class HomeFinanceDatabaseMigrationTest {
             MIGRATION_1_2,
             MIGRATION_2_3,
             MIGRATION_3_4,
+        ).use { db ->
+            assertEquals("Vipin", settingValue(db, "household_name"))
+            assertEquals(0, rowCount(db, "categories"))
+            assertEquals(0, rowCount(db, "transactions"))
+            assertEquals(0, rowCount(db, "recurring_schedules"))
+            assertEquals(0, rowCount(db, "recurring_occurrences"))
+        }
+    }
+
+    // ----------------------------------------------------------- version 4 -> 5
+
+    @Test
+    fun migratingFrom4To5KeepsEverythingTheHouseholdAlreadyHad() {
+        createVersion4DatabaseWithALedger()
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 5, true, MIGRATION_4_5).use { db ->
+            // One additive column must not disturb a single figure. The quantity and rate are checked
+            // as well as the amount, because they are the columns most recently added and the ones a
+            // careless statement is most likely to have been written around.
+            assertEquals(3, rowCount(db, "app_setting"))
+            assertEquals(1, rowCount(db, "categories"))
+            assertEquals(2, rowCount(db, "transactions"))
+            assertEquals(1, rowCount(db, "recurring_schedules"))
+            assertEquals(1, rowCount(db, "recurring_occurrences"))
+            assertEquals("Vipin", settingValue(db, "household_name"))
+            assertEquals("Groceries", firstCategoryName(db))
+            assertEquals(25_050L, transactionAmount(db, "1"))
+            assertEquals("Weekly shop", transactionDescription(db, "1"))
+            assertEquals(3_000L, nullableLong(db, "SELECT quantity_thousandths FROM transactions WHERE id = 1"))
+            assertEquals(835L, nullableLong(db, "SELECT rate_paise FROM transactions WHERE id = 1"))
+        }
+    }
+
+    @Test
+    fun migratingFrom4To5DecidesNoMarkForAnyExistingCategory() {
+        createVersion4DatabaseWithALedger()
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 5, true, MIGRATION_4_5).use { db ->
+            // The migration adds a column, not a decision. A category written before marks were
+            // stored has never had one chosen for it, and NULL is exactly that fact: the app reads it
+            // as "derive the mark from the name", which is what version 4 did on every screen. A value
+            // written here would put a choice into the household's mouth.
+            db.query("SELECT icon_key FROM categories").use { cursor ->
+                assertTrue("expected the category to survive the upgrade", cursor.moveToFirst())
+                while (!cursor.isAfterLast) {
+                    assertTrue("an existing category was given a mark it never had", cursor.isNull(0))
+                    cursor.moveToNext()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun migratingFrom4To5LeavesTheNewColumnStorableInBothOfItsStates() {
+        createVersion4DatabaseWithALedger()
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 5, true, MIGRATION_4_5).use { db ->
+            // The seeder writes a key through this column and a category the household adds leaves it
+            // alone, so both states have to be storable once the upgrade has run.
+            db.execSQL("UPDATE categories SET icon_key = 'groceries' WHERE id = 1")
+            db.execSQL(
+                "INSERT INTO categories (id, name, type, icon_key, is_active, created_at) " +
+                    "VALUES (2, 'Milk', 'EXPENSE', NULL, 1, 1)",
+            )
+
+            db.query("SELECT icon_key FROM categories ORDER BY id").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("groceries", cursor.getString(0))
+                cursor.moveToNext()
+                assertTrue(cursor.isNull(0))
+            }
+        }
+    }
+
+    @Test
+    fun migratingAllTheWayFrom1To5KeepsSettingsAndLandsOnTheCurrentSchema() {
+        createVersion1DatabaseWithSettings()
+
+        // The whole chain a device running since the first build would walk, ending on the schema the
+        // app actually ships - validated against the exported 5.json.
+        helper.runMigrationsAndValidate(
+            DATABASE_NAME,
+            5,
+            true,
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+        ).use { db ->
+            assertEquals("Vipin", settingValue(db, "household_name"))
+            assertEquals(0, rowCount(db, "categories"))
+            assertEquals(0, rowCount(db, "transactions"))
+            assertEquals(0, rowCount(db, "recurring_schedules"))
+            assertEquals(0, rowCount(db, "recurring_occurrences"))
+        }
+    }
+
+    // ----------------------------------------------------------- version 5 -> 6
+
+    @Test
+    fun migratingFrom5To6KeepsEverythingTheHouseholdAlreadyHad() {
+        createVersion5DatabaseWithALedger()
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 6, true, MIGRATION_5_6).use { db ->
+            // Two additive columns on one table must not disturb a single figure anywhere else. The
+            // schedule's own amount is checked as well as the ledger's, because it is the figure the new
+            // pair sits beside.
+            assertEquals(3, rowCount(db, "app_setting"))
+            assertEquals(1, rowCount(db, "categories"))
+            assertEquals(2, rowCount(db, "transactions"))
+            assertEquals(1, rowCount(db, "recurring_schedules"))
+            assertEquals(1, rowCount(db, "recurring_occurrences"))
+            assertEquals("Vipin", settingValue(db, "household_name"))
+            assertEquals("Groceries", firstCategoryName(db))
+            assertEquals("groceries", nullableText(db, "SELECT icon_key FROM categories WHERE id = 1"))
+            assertEquals(25_050L, transactionAmount(db, "1"))
+            assertEquals(1_500_000L, nullableLong(db, "SELECT amount_paise FROM recurring_schedules WHERE id = 1"))
+            assertEquals("Shop rent", nullableText(db, "SELECT name FROM recurring_schedules WHERE id = 1"))
+        }
+    }
+
+    @Test
+    fun migratingFrom5To6DecidesNoUnitPriceForAnyExistingSchedule() {
+        createVersion5DatabaseWithALedger()
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 6, true, MIGRATION_5_6).use { db ->
+            // A schedule written before this version was not priced by unit, and NULL is exactly that
+            // fact. Filling in a rate would invent a figure the household never gave - and one the app
+            // would then print beside their schedule as though they had.
+            db.query("SELECT unit, rate_paise FROM recurring_schedules").use { cursor ->
+                assertTrue("expected the schedule to survive the upgrade", cursor.moveToFirst())
+                while (!cursor.isAfterLast) {
+                    assertTrue("an existing schedule was given a unit it never had", cursor.isNull(0))
+                    assertTrue("an existing schedule was given a rate it never had", cursor.isNull(1))
+                    cursor.moveToNext()
+                }
+            }
+        }
+    }
+
+    @Test
+    fun migratingFrom5To6LeavesTheNewColumnsStorableInBothOfTheirStates() {
+        createVersion5DatabaseWithALedger()
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 6, true, MIGRATION_5_6).use { db ->
+            // A household that priced a schedule by unit stores both; one that did not stores neither.
+            // Both states have to be storable once the upgrade has run.
+            db.execSQL("UPDATE recurring_schedules SET unit = 'litre', rate_paise = 6000 WHERE id = 1")
+            db.execSQL(
+                "INSERT INTO recurring_schedules " +
+                    "(id, name, category_id, amount_paise, unit, rate_paise, frequency, interval_count, " +
+                    "start_date, status, created_at, updated_at) " +
+                    "VALUES (2, 'Salary', 1, 4500000, NULL, NULL, 'MONTHLY', 1, 20000, 'ACTIVE', 1, 1)",
+            )
+
+            db.query("SELECT unit, rate_paise FROM recurring_schedules ORDER BY id").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("litre", cursor.getString(0))
+                assertEquals(6_000L, cursor.getLong(1))
+                cursor.moveToNext()
+                assertTrue(cursor.isNull(0))
+                assertTrue(cursor.isNull(1))
+            }
+        }
+    }
+
+    @Test
+    fun migratingAllTheWayFrom1To6KeepsSettingsAndLandsOnTheCurrentSchema() {
+        createVersion1DatabaseWithSettings()
+
+        // The whole chain a device running since the first build would walk, ending on the schema the
+        // app actually ships - validated against the exported 6.json.
+        helper.runMigrationsAndValidate(
+            DATABASE_NAME,
+            6,
+            true,
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
         ).use { db ->
             assertEquals("Vipin", settingValue(db, "household_name"))
             assertEquals(0, rowCount(db, "categories"))
@@ -312,6 +497,91 @@ class HomeFinanceDatabaseMigrationTest {
         }
     }
 
+    /**
+     * The same ledger as [createVersion3DatabaseWithALedger] plus a schedule and a paid occurrence,
+     * written into a **version-4** file so the version-4-to-5 step can be exercised on its own.
+     *
+     * It carries the notes, quantity and rate of a version-3 entry *and* the recurring tables of
+     * version 4, so an upgrade that disturbed either would be visible in one place.
+     */
+    private fun createVersion4DatabaseWithALedger() {
+        helper.createDatabase(DATABASE_NAME, 4).use { db ->
+            db.execSQL("INSERT INTO app_setting (setting_key, setting_value) VALUES ('currency_code', 'INR')")
+            db.execSQL("INSERT INTO app_setting (setting_key, setting_value) VALUES ('household_name', 'Vipin')")
+            db.execSQL("INSERT INTO app_setting (setting_key, setting_value) VALUES ('empty_value', '')")
+            db.execSQL(
+                "INSERT INTO categories (id, name, type, is_active, created_at) " +
+                    "VALUES (1, 'Groceries', 'EXPENSE', 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO transactions " +
+                    "(id, type, amount_paise, category_id, description, notes, quantity_thousandths, " +
+                    "rate_paise, transaction_date, created_at, updated_at) " +
+                    "VALUES (1, 'EXPENSE', 25050, 1, 'Weekly shop', 'From the corner shop', 3000, 835, " +
+                    "20000, 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO transactions " +
+                    "(id, type, amount_paise, category_id, description, transaction_date, created_at, updated_at) " +
+                    "VALUES (2, 'EXPENSE', 500, 1, NULL, 20001, 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO recurring_schedules " +
+                    "(id, name, category_id, amount_paise, frequency, interval_count, start_date, " +
+                    "status, created_at, updated_at) " +
+                    "VALUES (1, 'Shop rent', 1, 1500000, 'MONTHLY', 1, 20000, 'ACTIVE', 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO recurring_occurrences " +
+                    "(id, schedule_id, due_date, amount_paise, status, transaction_id, created_at, updated_at) " +
+                    "VALUES (1, 1, 20000, 1500000, 'PAID', 1, 1, 1)",
+            )
+        }
+    }
+
+    /**
+     * The same ledger as [createVersion4DatabaseWithALedger], plus a stored category mark, written into
+     * a **version-5** file so the version-5-to-6 step can be exercised on its own.
+     *
+     * A `unit` and a `rate_paise` are deliberately *not* written: they do not exist yet in version 5,
+     * and the point of the upgrade is that the household's schedules come through it without being
+     * given figures they never typed.
+     */
+    private fun createVersion5DatabaseWithALedger() {
+        helper.createDatabase(DATABASE_NAME, 5).use { db ->
+            db.execSQL("INSERT INTO app_setting (setting_key, setting_value) VALUES ('currency_code', 'INR')")
+            db.execSQL("INSERT INTO app_setting (setting_key, setting_value) VALUES ('household_name', 'Vipin')")
+            db.execSQL("INSERT INTO app_setting (setting_key, setting_value) VALUES ('empty_value', '')")
+            db.execSQL(
+                "INSERT INTO categories (id, name, type, icon_key, is_active, created_at) " +
+                    "VALUES (1, 'Groceries', 'EXPENSE', 'groceries', 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO transactions " +
+                    "(id, type, amount_paise, category_id, description, notes, quantity_thousandths, " +
+                    "rate_paise, transaction_date, created_at, updated_at) " +
+                    "VALUES (1, 'EXPENSE', 25050, 1, 'Weekly shop', 'From the corner shop', 3000, 835, " +
+                    "20000, 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO transactions " +
+                    "(id, type, amount_paise, category_id, description, transaction_date, created_at, updated_at) " +
+                    "VALUES (2, 'EXPENSE', 500, 1, NULL, 20001, 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO recurring_schedules " +
+                    "(id, name, category_id, amount_paise, frequency, interval_count, start_date, " +
+                    "status, created_at, updated_at) " +
+                    "VALUES (1, 'Shop rent', 1, 1500000, 'MONTHLY', 1, 20000, 'ACTIVE', 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO recurring_occurrences " +
+                    "(id, schedule_id, due_date, amount_paise, status, transaction_id, created_at, updated_at) " +
+                    "VALUES (1, 1, 20000, 1500000, 'PAID', 1, 1, 1)",
+            )
+        }
+    }
+
     /** True when [table] has a unique index whose columns are exactly [columns]. */
     private fun hasUniqueIndexOn(
         db: androidx.sqlite.db.SupportSQLiteDatabase,
@@ -370,6 +640,27 @@ class HomeFinanceDatabaseMigrationTest {
     ): String? = db.query("SELECT description FROM transactions WHERE id = $id").use { cursor ->
         assertTrue("No transactions row with id $id", cursor.moveToFirst())
         cursor.getString(0)
+    }
+
+    /**
+     * One nullable INTEGER from a single-row query, so a test can assert that an upgrade left an
+     * optional column at NULL rather than filling it with a zero that would read as a real figure.
+     */
+    private fun nullableLong(
+        db: androidx.sqlite.db.SupportSQLiteDatabase,
+        sql: String,
+    ): Long? = db.query(sql).use { cursor ->
+        assertTrue("No row for: $sql", cursor.moveToFirst())
+        if (cursor.isNull(0)) null else cursor.getLong(0)
+    }
+
+    /** One nullable TEXT from a single-row query, so a test can assert a column really did stay NULL. */
+    private fun nullableText(
+        db: androidx.sqlite.db.SupportSQLiteDatabase,
+        sql: String,
+    ): String? = db.query(sql).use { cursor ->
+        assertTrue("No row for: $sql", cursor.moveToFirst())
+        if (cursor.isNull(0)) null else cursor.getString(0)
     }
 
     private fun settingValue(

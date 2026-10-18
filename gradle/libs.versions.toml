@@ -12,7 +12,10 @@ espressoCore = "3.7.0"
 lifecycle = "2.11.0"
 activityCompose = "1.13.0"
 composeBom = "2026.09.00"
-materialIconsCore = "1.7.8"
+# The icon artifacts are their own release line and stopped at 1.7.8; the Compose BOM does not
+# manage them. One version serves both artifacts, so a core glyph and an extended glyph can never
+# come from two different releases.
+materialIcons = "1.7.8"
 navigation = "2.10.1"
 serializationJson = "1.11.0"
 room = "2.8.5"
@@ -35,7 +38,11 @@ androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "u
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-androidx-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core", version.ref = "materialIconsCore" }
+androidx-compose-material-icons-core = { group = "androidx.compose.material", name = "material-icons-core", version.ref = "materialIcons" }
+# The category marks use glyphs the core set does not ship (a milk bottle, a store, a gas cylinder,
+# a hospital...). Extended is the only artifact that has them, and it is a large one - see the note
+# on CategoryIcons for why that trade is accepted here.
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended", version.ref = "materialIcons" }
 androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "serializationJson" }
 

@@ -468,7 +468,7 @@ class AddTransactionViewModel(
             .map<List<CategoryEntity>, CategoriesUiState> { rows ->
                 CategoriesUiState.Ready(
                     rows.filter { it.isActive }
-                        .map { CategoryOption(id = it.id, name = it.name) },
+                        .map { CategoryOption(id = it.id, name = it.name, iconKey = it.iconKey) },
                 )
             }
             .onStart { emit(CategoriesUiState.Loading) }
@@ -505,7 +505,11 @@ class AddTransactionViewModel(
             date = row.transactionDate,
             amountInput = MoneyInput.toEditableText(row.amountPaise),
             amountError = null,
-            category = CategoryOption(id = row.categoryId, name = row.categoryName),
+            category = CategoryOption(
+                id = row.categoryId,
+                name = row.categoryName,
+                iconKey = row.categoryIconKey,
+            ),
             showCategoryError = false,
             description = row.description.orEmpty(),
             notes = row.notes.orEmpty(),

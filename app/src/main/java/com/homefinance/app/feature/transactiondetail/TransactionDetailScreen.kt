@@ -18,6 +18,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.AlertDialog
@@ -46,7 +48,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.homefinance.app.R
 import com.homefinance.app.core.ui.component.HomeFinanceTopBar
-import com.homefinance.app.core.ui.icon.HomeFinanceIcons
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
 import com.homefinance.app.core.util.CurrencyFormatter
 import com.homefinance.app.core.util.DateFormatter
@@ -245,6 +246,7 @@ private fun LoadedTransaction(
                     value = transaction.categoryName,
                     leading = {
                         CategoryMark(
+                            iconKey = transaction.categoryIconKey,
                             categoryName = transaction.categoryName,
                             type = transaction.type,
                             size = 24.dp,
@@ -363,6 +365,7 @@ private fun TransactionSummary(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         CategoryMark(
+            iconKey = transaction.categoryIconKey,
             categoryName = transaction.categoryName,
             type = transaction.type,
             size = 72.dp,
@@ -608,8 +611,8 @@ private fun amountColorFor(type: TransactionType): Color = when (type) {
 
 /** Money out points down and money in points up, so the direction is legible without the colour. */
 private fun directionIconFor(type: TransactionType): ImageVector = when (type) {
-    TransactionType.INCOME -> HomeFinanceIcons.ArrowUp
-    TransactionType.EXPENSE -> HomeFinanceIcons.ArrowDown
+    TransactionType.INCOME -> Icons.Filled.ArrowUpward
+    TransactionType.EXPENSE -> Icons.Filled.ArrowDownward
 }
 
 private fun typeNameRes(type: TransactionType): Int = when (type) {

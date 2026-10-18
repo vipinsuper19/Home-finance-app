@@ -20,10 +20,12 @@ import com.homefinance.app.core.util.CurrencyFormatter
 import com.homefinance.app.core.util.DateFormatter
 import com.homefinance.app.data.model.RecurrenceFrequency
 import com.homefinance.app.data.model.RecurringScheduleStatus
+import com.homefinance.app.data.model.TransactionType
 import java.io.IOException
 import java.time.Instant
 import java.time.LocalDate
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -101,7 +103,22 @@ class RecurringScreenTest {
     fun theAddActionIsOfferedInEveryState() {
         val adds = AtomicLong()
 
-        render(RecurringListUiState.Ready(emptyList()), onAddSchedule = { adds.incrementAndGet() })
+        // It lives in the app bar, so it is on screen while the first read is still running and while a
+        // read has failed - the two states that have nothing else to offer.
+        render(RecurringListUiState.Loading, onAddSchedule = { adds.incrementAndGet() })
+        composeTestRule.onNodeWithContentDescription(text(R.string.recurring_add)).performClick()
+
+        assertEquals(1L, adds.get())
+    }
+
+    @Test
+    fun theAddActionIsOfferedOnAFailedReadToo() {
+        val adds = AtomicLong()
+
+        render(
+            uiState = RecurringListUiState.Failed(IOException("the schedules could not be read")),
+            onAddSchedule = { adds.incrementAndGet() },
+        )
 
         composeTestRule.onNodeWithContentDescription(text(R.string.recurring_add)).performClick()
 
@@ -115,11 +132,49 @@ class RecurringScreenTest {
         render(row(schedule(id = 1L, name = "Shop rent", category = "Rent", amountPaise = 1_500_000L)))
 
         composeTestRule.onNodeWithText("Shop rent").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Ground floor, paid by UPI").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Rent").assertIsDisplayed()
         // The rule and the figure on one line, built from the same formatter the ledger uses.
         composeTestRule.onNodeWithText("Monthly • ${CurrencyFormatter.formatInr(1_500_000L)}")
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun aRowShowsTheUnitPriceWhenTheHouseholdGaveOne() {
+        render(
+            row(
+                schedule(
+                    id = 1L,
+                    name = "Milk",
+                    category = "Milk",
+                    amountPaise = 6_000L,
+                    frequency = RecurrenceFrequency.DAILY,
+                    intervalCount = 1,
+                    unit = "litre",
+                    ratePaise = 6_000L,
+                ),
+            ),
+        )
+
+        // The rate *instead of* the expected amount, which is the design's own line - see
+        // [RecurringScheduleRow] for why the two are not printed together.
+        composeTestRule
+            .onNodeWithText(
+                "Daily • " + text(
+                    R.string.recurring_rate_per_unit,
+                    CurrencyFormatter.formatInr(6_000L),
+                    "litre",
+                ),
+            )
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun aRowDoesNotRepeatTheDescriptionOrTheCategoryName() {
+        render(row(schedule(id = 1L, name = "Shop rent", category = "Rent")))
+
+        // Both facts belong to the details screen. A row that grew a line for every fact a schedule has
+        // would stop being scannable, which is the one thing a list of bills has to be.
+        composeTestRule.onNodeWithText("Ground floor, paid by UPI").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Rent").assertDoesNotExist()
     }
 
     @Test
@@ -300,6 +355,74 @@ class RecurringScreenTest {
         composeTestRule.onNodeWithText("Shop rent").assertIsDisplayed()
     }
 
+    // ----------------------------------------------------------------- the filter
+
+    @Test
+    fun theFilterBarOffersAllExpenseAndIncome() {
+        render(row(schedule(id = 1L)))
+
+        composeTestRule.onNodeWithText(text(R.string.transactions_filter_all)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.transactions_filter_expense)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.transactions_filter_income)).assertIsDisplayed()
+    }
+
+    @Test
+    fun choosingAFilterReportsIt() {
+        val chosen = AtomicReference<ScheduleTypeFilter>()
+
+        render(row(schedule(id = 1L)), onFilterChange = { chosen.set(it) })
+
+        composeTestRule.onNodeWithText(text(R.string.transactions_filter_income)).performClick()
+
+        assertEquals(ScheduleTypeFilter.INCOME, chosen.get())
+    }
+
+    @Test
+    fun aFilterThatMatchesNothingIsNotDrawnAsNoSchedulesAtAll() {
+        render(
+            RecurringListUiState.Ready(
+                schedules = emptyList(),
+                filter = ScheduleTypeFilter.INCOME,
+                hasAnySchedule = true,
+            ),
+        )
+
+        // The bar stays where it is, because the way out of this screen is to choose another chip.
+        composeTestRule.onNodeWithText(text(R.string.transactions_filter_all)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.recurring_no_matches)).assertIsDisplayed()
+        // And it must not claim the household has nothing, which would be a lie about their own money.
+        composeTestRule.onNodeWithText(text(R.string.recurring_empty_title)).assertDoesNotExist()
+    }
+
+    @Test
+    fun theFilterBarIsNotOfferedWhenThereIsNothingToFilter() {
+        render(RecurringListUiState.Ready(emptyList()))
+
+        composeTestRule.onNodeWithText(text(R.string.recurring_empty_title)).assertIsDisplayed()
+        composeTestRule.onNodeWithText(text(R.string.transactions_filter_all)).assertDoesNotExist()
+    }
+
+    @Test
+    fun anIncomeSchedulesRowIsDrawnLikeAnyOther() {
+        render(
+            row(
+                schedule(
+                    id = 1L,
+                    name = "Salary",
+                    category = "Salary",
+                    categoryType = TransactionType.INCOME,
+                    amountPaise = 4_500_000L,
+                ),
+            ),
+        )
+
+        // The mark's colour and glyph come from the category's direction, and nothing about the row's
+        // *words* changes: a schedule is a schedule whichever way the money moves.
+        composeTestRule.onNodeWithText("Salary").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Monthly • ${CurrencyFormatter.formatInr(4_500_000L)}")
+            .assertIsDisplayed()
+    }
+
     // ------------------------------------------------------------------ fixtures
 
     private fun text(id: Int): String = resources.getString(id)
@@ -317,12 +440,18 @@ class RecurringScreenTest {
         status: RecurringScheduleStatus = RecurringScheduleStatus.ACTIVE,
         nextDueDate: LocalDate? = LocalDate.of(2026, 10, 5),
         nextDueState: OccurrenceDisplayState? = OccurrenceDisplayState.OVERDUE,
+        categoryType: TransactionType = TransactionType.EXPENSE,
+        unit: String? = null,
+        ratePaise: Long? = null,
     ): RecurringScheduleCard = RecurringScheduleCard(
         id = id,
         name = name,
         description = description,
         categoryName = category,
+        categoryType = categoryType,
         amountPaise = amountPaise,
+        unit = unit,
+        ratePaise = ratePaise,
         frequency = frequency,
         intervalCount = intervalCount,
         status = status,
@@ -342,6 +471,7 @@ class RecurringScreenTest {
         onAddSchedule: () -> Unit = {},
         onOpenSchedule: (Long) -> Unit = {},
         onActiveChange: (Long, Boolean) -> Unit = { _, _ -> },
+        onFilterChange: (ScheduleTypeFilter) -> Unit = {},
     ) {
         composeTestRule.setContent {
             HomeFinanceTheme {
@@ -351,6 +481,7 @@ class RecurringScreenTest {
                     onAddSchedule = onAddSchedule,
                     onOpenSchedule = onOpenSchedule,
                     onActiveChange = onActiveChange,
+                    onFilterChange = onFilterChange,
                 )
             }
         }

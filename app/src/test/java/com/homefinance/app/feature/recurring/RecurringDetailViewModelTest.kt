@@ -228,6 +228,63 @@ class RecurringDetailViewModelTest {
     }
 
     @Test
+    fun theSummaryCountsEveryOccurrenceAndLeavesSkipsOutOfAllThreeFigures() = runTest {
+        val viewModel = Fixture(
+            schedules = listOf(schedule()),
+            occurrences = listOf(
+                // Two settled payments.
+                occurrence(id = 1L, dueDate = LocalDate.of(2026, 8, 5), status = RecurringOccurrenceStatus.PAID),
+                occurrence(id = 2L, dueDate = LocalDate.of(2026, 9, 5), status = RecurringOccurrenceStatus.PAID),
+                // One date the household decided did not happen.
+                occurrence(id = 3L, dueDate = LocalDate.of(2026, 10, 1), status = RecurringOccurrenceStatus.SKIPPED),
+                // Due today: not late, and not settled either.
+                occurrence(id = 4L, dueDate = TODAY),
+                // Two still ahead.
+                occurrence(id = 5L, dueDate = TODAY.plusDays(5)),
+                occurrence(id = 6L, dueDate = TODAY.plusDays(35)),
+                // And one already missed.
+                occurrence(id = 7L, dueDate = TODAY.minusDays(15)),
+            ),
+        ).viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        val content = viewModel.content()
+
+        // Counted over every occurrence, not just the five the short history shows: the summary is the
+        // schedule's whole record, which is what makes it worth opening.
+        assertEquals(2, content.paidCount)
+        assertEquals(3, content.upcomingCount)
+        assertEquals(1, content.overdueCount)
+        assertEquals(7, content.occurrenceCount)
+
+        // A skip is counted by none of the three: the household decided it did not happen, so calling it
+        // paid, upcoming or overdue would all be untrue.
+        assertEquals(
+            content.occurrenceCount,
+            content.paidCount + content.upcomingCount + content.overdueCount + 1,
+        )
+    }
+
+    @Test
+    fun aDueDateEarlierInTheDayIsCountedAsUpcomingRatherThanOverdue() = runTest {
+        val viewModel = Fixture(
+            schedules = listOf(schedule()),
+            occurrences = listOf(occurrence(id = 1L, dueDate = TODAY)),
+        ).viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        val content = viewModel.content()
+
+        assertEquals(OccurrenceDisplayState.DUE, content.outstanding?.state)
+        assertEquals(1, content.upcomingCount)
+        assertEquals(0, content.overdueCount)
+    }
+
+    @Test
     fun anExpenseDeletedFromTheLedgerIsStillDrawnAsPaidAndSaysTheEntryIsGone() = runTest {
         val viewModel = Fixture(
             schedules = listOf(schedule()),

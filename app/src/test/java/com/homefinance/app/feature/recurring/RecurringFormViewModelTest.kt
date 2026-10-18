@@ -1,6 +1,7 @@
 package com.homefinance.app.feature.recurring
 
 import androidx.lifecycle.ViewModelStore
+import com.homefinance.app.R
 import com.homefinance.app.core.util.MoneyParseResult
 import com.homefinance.app.data.local.TransactionRunner
 import com.homefinance.app.data.local.entity.CategoryEntity
@@ -173,7 +174,7 @@ class RecurringFormViewModelTest {
     // ------------------------------------------------------------ the category list
 
     @Test
-    fun onlyActiveExpenseCategoriesAreOffered() = runTest {
+    fun onlyActiveCategoriesOfTheFormsOwnTypeAreOffered() = runTest {
         val fixture = Fixture(
             categories = listOf(
                 category(id = 1L, name = "Rent", active = true),
@@ -187,6 +188,91 @@ class RecurringFormViewModelTest {
 
         val options = (viewModel.uiState.value.categories as CategoriesUiState.Ready).options
         assertEquals(listOf(1L to "Rent"), options.map { it.id to it.name })
+    }
+
+    @Test
+    fun switchingToIncomeOffersTheIncomeCategoriesAndDropsTheChosenOne() = runTest {
+        val fixture = Fixture(
+            categories = listOf(
+                category(id = 1L, name = "Rent"),
+                category(id = 2L, name = "Groceries"),
+                category(id = 3L, name = "Salary", type = TransactionType.INCOME),
+            ),
+        )
+        val viewModel = fixture.viewModel()
+        advanceUntilIdle()
+        viewModel.onCategorySelected(1L)
+
+        viewModel.onTypeChange(TransactionType.INCOME)
+        advanceUntilIdle()
+
+        // The list is re-read for the new direction...
+        val options = (viewModel.uiState.value.categories as CategoriesUiState.Ready).options
+        assertEquals(listOf(3L to "Salary"), options.map { it.id to it.name })
+        // ...and the category chosen from the old one is dropped, because it is not on offer any more:
+        // keeping it would leave the form naming something the household cannot see or re-choose.
+        assertNull(viewModel.uiState.value.category)
+    }
+
+    @Test
+    fun switchingBackToExpenseOffersTheExpenseCategoriesAgain() = runTest {
+        val fixture = Fixture(
+            categories = listOf(
+                category(id = 1L, name = "Rent"),
+                category(id = 3L, name = "Salary", type = TransactionType.INCOME),
+            ),
+        )
+        val viewModel = fixture.viewModel()
+        advanceUntilIdle()
+
+        viewModel.onTypeChange(TransactionType.INCOME)
+        advanceUntilIdle()
+        viewModel.onTypeChange(TransactionType.EXPENSE)
+        advanceUntilIdle()
+
+        val options = (viewModel.uiState.value.categories as CategoriesUiState.Ready).options
+        assertEquals(listOf(1L to "Rent"), options.map { it.id to it.name })
+    }
+
+    @Test
+    fun anIncomeScheduleIsWrittenWithTheIncomeCategoryItWasGiven() = runTest {
+        val fixture = Fixture(
+            categories = listOf(category(id = 3L, name = "Salary", type = TransactionType.INCOME)),
+        )
+        val viewModel = fixture.viewModel()
+        advanceUntilIdle()
+
+        viewModel.onTypeChange(TransactionType.INCOME)
+        advanceUntilIdle()
+        viewModel.onNameChange("Salary")
+        viewModel.onAmountChange("45000")
+        viewModel.onCategorySelected(3L)
+        viewModel.save()
+        advanceUntilIdle()
+
+        // There is no direction to send: the row is filed under an income category, and that is the
+        // whole of what makes it an income schedule.
+        val stored = fixture.recurringDao.storedSchedules.single()
+        assertEquals(3L, stored.categoryId)
+        assertEquals(4_500_000L, stored.amountPaise)
+        assertEquals(stored.id, viewModel.uiState.value.savedScheduleId)
+    }
+
+    @Test
+    fun editingAnIncomeScheduleOpensOnIncomeAndKeepsItsCategory() = runTest {
+        val fixture = Fixture(
+            schedules = listOf(existingSchedule(categoryId = SALARY_ID)),
+            categories = listOf(category(id = SALARY_ID, name = "Salary", type = TransactionType.INCOME)),
+        )
+        val viewModel = fixture.viewModel(editingId = SCHEDULE_ID)
+        advanceUntilIdle()
+
+        // The direction is read back from the category the row is filed under rather than assumed, so
+        // an edit cannot silently re-file a salary as an expense.
+        assertEquals(TransactionType.INCOME, viewModel.uiState.value.type)
+        assertEquals(SALARY_ID, viewModel.uiState.value.category?.id)
+        val options = (viewModel.uiState.value.categories as CategoriesUiState.Ready).options
+        assertEquals(listOf(SALARY_ID), options.map { it.id })
     }
 
     @Test
@@ -348,6 +434,144 @@ class RecurringFormViewModelTest {
         viewModel.onNameChange("Shop rent")
 
         assertFalse(viewModel.uiState.value.showNameError)
+    }
+
+    // ---------------------------------------------------------------- unit price
+
+    @Test
+    fun theUnitPriceFieldsAreIgnoredWhileTheSwitchIsOff() = runTest {
+        val fixture = Fixture()
+        val viewModel = fixture.viewModel()
+        advanceUntilIdle()
+
+        // A figure left in a hidden field - typed once, then switched off - is not a figure the household
+        // is giving now, so it must not reach the database.
+        viewModel.onUnitChange("litre")
+        viewModel.onRateChange("60")
+        viewModel.onNameChange("Shop rent")
+        viewModel.onAmountChange("15000")
+        viewModel.onCategorySelected(RENT_ID)
+        viewModel.save()
+        advanceUntilIdle()
+
+        val stored = fixture.recurringDao.storedSchedules.single()
+        assertNull(stored.unit)
+        assertNull(stored.ratePaise)
+    }
+
+    @Test
+    fun aCompleteUnitPriceIsTrimmedAndStored() = runTest {
+        val fixture = Fixture()
+        val viewModel = fixture.viewModel()
+        advanceUntilIdle()
+
+        viewModel.onNameChange("Milk")
+        // Two litres a month at sixty rupees a litre: the amount is the household's own figure, because
+        // there is no quantity on the schedule for the rate to be multiplied by.
+        viewModel.onAmountChange("120")
+        viewModel.onCategorySelected(RENT_ID)
+        viewModel.onUnitRateToggle(true)
+        viewModel.onUnitChange("  litre  ")
+        viewModel.onRateChange("60")
+        viewModel.save()
+        advanceUntilIdle()
+
+        val stored = fixture.recurringDao.storedSchedules.single()
+        assertEquals("litre", stored.unit)
+        assertEquals(6_000L, stored.ratePaise)
+        assertEquals(12_000L, stored.amountPaise)
+    }
+
+    @Test
+    fun aUnitPriceWithNoUnitIsRefusedOnTheUnitAndNothingIsWritten() = runTest {
+        val fixture = Fixture()
+        val viewModel = fixture.viewModel()
+        advanceUntilIdle()
+
+        viewModel.onNameChange("Milk")
+        viewModel.onAmountChange("6000")
+        viewModel.onCategorySelected(RENT_ID)
+        viewModel.onUnitRateToggle(true)
+        viewModel.onRateChange("60")
+        viewModel.save()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showUnitError)
+        // Only the first complaint is raised, so the rest of the form is not shouted at as well.
+        assertNull(viewModel.uiState.value.rateError)
+        assertTrue(fixture.recurringDao.insertedSchedules.isEmpty())
+    }
+
+    @Test
+    fun aUnitPriceWithNoRateIsRefusedOnTheRate() = runTest {
+        val fixture = Fixture()
+        val viewModel = fixture.viewModel()
+        advanceUntilIdle()
+
+        viewModel.onNameChange("Milk")
+        viewModel.onAmountChange("6000")
+        viewModel.onCategorySelected(RENT_ID)
+        viewModel.onUnitRateToggle(true)
+        viewModel.onUnitChange("litre")
+        viewModel.save()
+        advanceUntilIdle()
+
+        // The rate's own wording, not the amount's: this form has an amount field too and it is filled in.
+        assertEquals(MoneyParseResult.Problem.Blank, viewModel.uiState.value.rateError)
+        assertEquals(
+            R.string.add_transaction_rate_error_blank,
+            viewModel.uiState.value.rateError!!.rateMessageRes(),
+        )
+        assertFalse(viewModel.uiState.value.showUnitError)
+        assertTrue(fixture.recurringDao.insertedSchedules.isEmpty())
+    }
+
+    @Test
+    fun turningTheUnitPriceOffClearsItsComplaintsButKeepsWhatWasTyped() = runTest {
+        val fixture = Fixture()
+        val viewModel = fixture.viewModel()
+        advanceUntilIdle()
+
+        viewModel.onNameChange("Milk")
+        viewModel.onAmountChange("120")
+        viewModel.onCategorySelected(RENT_ID)
+        viewModel.onUnitRateToggle(true)
+        viewModel.save()
+        advanceUntilIdle()
+        assertTrue(viewModel.uiState.value.showUnitError)
+
+        viewModel.onUnitChange("litre")
+        viewModel.onUnitRateToggle(false)
+
+        // The complaint goes, because the fields it was about are no longer being asked about...
+        assertFalse(viewModel.uiState.value.showUnitError)
+        // ...but the typed label stays, so switching it back on shows the household their own words again
+        // rather than a pair of empty fields.
+        assertEquals("litre", viewModel.uiState.value.unitInput)
+    }
+
+    @Test
+    fun anEditBringsBackTheStoredUnitPrice() = runTest {
+        val fixture = Fixture(schedules = listOf(existingSchedule(unit = "litre", ratePaise = 6_000L)))
+        val viewModel = fixture.viewModel(editingId = SCHEDULE_ID)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+        assertTrue(state.useUnitAndRate)
+        assertEquals("litre", state.unitInput)
+        // Written back the way a person would type it, so an unchanged save stores the same paise again.
+        assertEquals("60", state.rateInput)
+    }
+
+    @Test
+    fun anEditWithNoStoredUnitPriceOpensWithTheSwitchOff() = runTest {
+        val fixture = Fixture(schedules = listOf(existingSchedule()))
+        val viewModel = fixture.viewModel(editingId = SCHEDULE_ID)
+        advanceUntilIdle()
+
+        assertFalse(viewModel.uiState.value.useUnitAndRate)
+        assertEquals("", viewModel.uiState.value.unitInput)
+        assertEquals("", viewModel.uiState.value.rateInput)
     }
 
     // ------------------------------------------------------------------ saving
@@ -539,6 +763,8 @@ class RecurringFormViewModelTest {
     ) {
         private val names: Map<Long, String> = categories.associate { it.id to it.name }
 
+        private val types: Map<Long, TransactionType> = categories.associate { it.id to it.type }
+
         val categoryDao = FakeCategoryDao(categories)
 
         val transactionDao = FakeTransactionDao(categoryNames = names)
@@ -547,6 +773,7 @@ class RecurringFormViewModelTest {
             categoryNames = names,
             initialSchedules = schedules,
             initialOccurrences = occurrences,
+            categoryTypes = types,
         )
 
         val categoryRepository = CategoryRepository(categoryDao)
@@ -564,6 +791,7 @@ class RecurringFormViewModelTest {
 
         const val SCHEDULE_ID = 1L
         const val RENT_ID = 10L
+        const val SALARY_ID = 11L
 
         val TODAY: LocalDate = LocalDate.of(2026, 10, 20)
         val NOW: Instant = Instant.parse("2026-10-20T04:30:00Z")
@@ -582,12 +810,18 @@ class RecurringFormViewModelTest {
          * A monthly schedule already generated up to today, so that a test about the form is not
          * disturbed by generation happening underneath it.
          */
-        fun existingSchedule(): RecurringScheduleEntity = RecurringScheduleEntity(
+        fun existingSchedule(
+            categoryId: Long = RENT_ID,
+            unit: String? = null,
+            ratePaise: Long? = null,
+        ): RecurringScheduleEntity = RecurringScheduleEntity(
             id = SCHEDULE_ID,
             name = "Shop rent",
             description = "Ground floor, paid by UPI",
-            categoryId = RENT_ID,
+            categoryId = categoryId,
             amountPaise = 1_500_000L,
+            unit = unit,
+            ratePaise = ratePaise,
             frequency = RecurrenceFrequency.MONTHLY,
             intervalCount = 1,
             startDate = LocalDate.of(2026, 10, 5),
