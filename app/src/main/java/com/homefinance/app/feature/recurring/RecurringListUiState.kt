@@ -62,6 +62,8 @@ data class RecurringScheduleCard(
     val name: String,
     val description: String?,
     val categoryName: String,
+    /** The category's stored mark, or `null` when nobody chose one. Drawn as the card's mark. */
+    val categoryIconKey: String? = null,
     val amountPaise: Long,
     val frequency: RecurrenceFrequency,
     val intervalCount: Int,
@@ -89,6 +91,8 @@ data class RecurringOccurrenceItem(
     val id: Long,
     val scheduleName: String,
     val categoryName: String,
+    /** The category's stored mark, or `null` when nobody chose one. Drawn as the row's mark. */
+    val categoryIconKey: String? = null,
     val dueDate: LocalDate,
     val amountPaise: Long,
     val state: OccurrenceDisplayState,

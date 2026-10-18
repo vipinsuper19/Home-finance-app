@@ -64,6 +64,7 @@ import com.homefinance.app.core.ui.component.HomeFinanceTopBar
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
 import com.homefinance.app.core.util.DateFormatter
 import com.homefinance.app.data.model.TransactionType
+import com.homefinance.app.feature.addtransaction.CategoryMark
 import java.time.LocalDate
 import java.time.YearMonth
 
@@ -536,7 +537,6 @@ private fun TransactionRow(
     modifier: Modifier = Modifier,
 ) {
     val description = item.description
-    val kind = categoryIconKindFor(categoryName = item.categoryName, type = item.type)
 
     Row(
         modifier = modifier
@@ -545,20 +545,12 @@ private fun TransactionRow(
             .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Surface(
-            shape = CircleShape,
-            color = kind.containerColor(),
-            contentColor = kind.onContainerColor(),
-            modifier = Modifier.size(44.dp),
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = kind.imageVector,
-                    contentDescription = null,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-        }
+        CategoryMark(
+            iconKey = item.categoryIconKey,
+            categoryName = item.categoryName,
+            type = item.type,
+            size = 44.dp,
+        )
 
         Spacer(modifier = Modifier.width(14.dp))
 

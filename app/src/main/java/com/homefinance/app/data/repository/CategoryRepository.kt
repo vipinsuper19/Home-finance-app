@@ -15,7 +15,9 @@ import kotlinx.coroutines.flow.Flow
  *  1. **Names must be normalised before they are compared.** The unique index on
  *     `(type, name)` only stops duplicates it can actually see, so `"Milk "` and `"Milk"` would
  *     otherwise both be storable. [CategoryEntity.create] applies the single normalisation
- *     policy, and this repository is the only place that builds rows for insertion.
+ *     policy, and this repository is where a category the household writes is built. The one other
+ *     writer is [CategorySeeder], which builds the shipped categories through the same
+ *     [CategoryEntity.create] and never touches a name already in use.
  *  2. **A blank name is not a database error.** `""` satisfies `NOT NULL` and is even unique, so
  *     the schema would happily store a category the household can never recognise.
  *

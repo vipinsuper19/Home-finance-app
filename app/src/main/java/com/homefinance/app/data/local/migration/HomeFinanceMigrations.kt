@@ -187,6 +187,32 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
 }
 
 /**
+ * Version 4 -> 5: gives a category a stored mark.
+ *
+ * One additive statement. `icon_key` is **nullable and has no default**, and that is the whole of the
+ * policy: a category that existed before this version has never had a mark chosen for it, and `NULL`
+ * is exactly that fact. The app reads `NULL` as "nobody chose one" and derives a mark from the name at
+ * the moment it draws it - which is what every category did in version 4 - so an upgrade changes no
+ * picture on any screen, and no row is rewritten to make it look as though someone had chosen.
+ *
+ * The twelve categories the app ships with are given their marks by
+ * [com.homefinance.app.data.repository.CategorySeeder] on the next start, not by this migration. A
+ * migration is the wrong place for it: it would have to invent names a household may already have,
+ * and it would run on a database whose owner never asked for extra categories. That decision is
+ * recorded once, in `app_setting`, by the seeder.
+ *
+ * Nothing is dropped and nothing is rewritten, so this upgrade cannot lose a ledger. The statement
+ * mirrors, character for character, the SQL Room generates for the version-5 entity, and
+ * `HomeFinanceDatabaseMigrationTest` validates the result against the exported `5.json`.
+ */
+val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `categories` ADD COLUMN `icon_key` TEXT")
+    }
+}
+
+/**
  * Every schema migration the app knows about, oldest first.
  *
  * [com.homefinance.app.data.local.HomeFinanceDatabase.build] registers this whole array, so adding
@@ -198,4 +224,4 @@ val MIGRATION_3_4: Migration = object : Migration(3, 4) {
  * lose it.
  */
 val HOME_FINANCE_MIGRATIONS: Array<Migration> =
-    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)

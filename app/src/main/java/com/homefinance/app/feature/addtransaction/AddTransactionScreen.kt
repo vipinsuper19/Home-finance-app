@@ -512,7 +512,11 @@ internal fun CategoryField(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (category != null) {
-                    CategoryMark(categoryName = category.name, type = type)
+                    CategoryMark(
+                        iconKey = category.iconKey,
+                        categoryName = category.name,
+                        type = type,
+                    )
                     Spacer(modifier = Modifier.width(12.dp))
                 }
 

@@ -94,6 +94,7 @@ interface RecurringDao {
                s.created_at        AS created_at,
                s.updated_at        AS updated_at,
                c.name              AS category_name,
+               c.icon_key          AS category_icon_key,
                (SELECT MIN(o.due_date)
                   FROM recurring_occurrences AS o
                  WHERE o.schedule_id = s.id
@@ -132,6 +133,7 @@ interface RecurringDao {
                s.created_at        AS created_at,
                s.updated_at        AS updated_at,
                c.name              AS category_name,
+               c.icon_key          AS category_icon_key,
                (SELECT MIN(o.due_date)
                   FROM recurring_occurrences AS o
                  WHERE o.schedule_id = s.id
@@ -241,7 +243,8 @@ interface RecurringDao {
                o.updated_at     AS updated_at,
                s.name           AS schedule_name,
                s.category_id    AS category_id,
-               c.name           AS category_name
+               c.name           AS category_name,
+               c.icon_key       AS category_icon_key
         FROM recurring_occurrences AS o
         INNER JOIN recurring_schedules AS s ON s.id = o.schedule_id
         INNER JOIN categories AS c ON c.id = s.category_id

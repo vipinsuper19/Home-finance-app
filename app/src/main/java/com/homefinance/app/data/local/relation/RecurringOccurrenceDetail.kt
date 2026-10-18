@@ -57,4 +57,13 @@ data class RecurringOccurrenceDetail(
 
     @ColumnInfo(name = "category_name")
     val categoryName: String,
+
+    /**
+     * The mark that category is drawn with, or `null` when nobody ever chose one - see
+     * [com.homefinance.app.data.model.CategoryIconKey]. Read from the schedule's category, which is
+     * the category the payment will be filed under, so a row and its dialog agree on the picture as
+     * well as on the name.
+     */
+    @ColumnInfo(name = "category_icon_key")
+    val categoryIconKey: String? = null,
 )

@@ -39,6 +39,12 @@ class FakeRecurringDao(
     private val categoryNames: Map<Long, String> = emptyMap(),
     initialSchedules: List<RecurringScheduleEntity> = emptyList(),
     initialOccurrences: List<RecurringOccurrenceEntity> = emptyList(),
+    /**
+     * The marks of those categories, standing in for `categories.icon_key`. Absent means "nobody
+     * chose one", which is `null` in the projections - the same thing the real join returns for a
+     * category with no stored key.
+     */
+    private val categoryIconKeys: Map<Long, String> = emptyMap(),
 ) : RecurringDao {
 
     private val schedules: MutableMap<Long, RecurringScheduleEntity> =
@@ -270,6 +276,7 @@ class FakeRecurringDao(
                 updatedAt = updatedAt,
                 nextDueDate = nextDueDate(id),
                 categoryName = categoryName,
+                categoryIconKey = categoryIconKeys[categoryId],
             )
         }
 
@@ -289,6 +296,7 @@ class FakeRecurringDao(
             scheduleName = schedule.name,
             categoryId = schedule.categoryId,
             categoryName = name,
+            categoryIconKey = categoryIconKeys[schedule.categoryId],
         )
     }
 

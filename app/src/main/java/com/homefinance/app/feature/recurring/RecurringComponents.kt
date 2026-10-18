@@ -84,6 +84,7 @@ internal fun RecurringScheduleRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CategoryMark(
+            iconKey = card.categoryIconKey,
             categoryName = card.categoryName,
             type = TransactionType.EXPENSE,
             size = 44.dp,
@@ -315,6 +316,7 @@ internal fun RecurringScheduleSummary(
     name: String,
     description: String?,
     categoryName: String,
+    categoryIconKey: String?,
     amountPaise: Long,
     frequency: String,
     status: RecurringScheduleStatus,
@@ -340,6 +342,7 @@ internal fun RecurringScheduleSummary(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CategoryMark(
+                    iconKey = categoryIconKey,
                     categoryName = categoryName,
                     type = TransactionType.EXPENSE,
                     size = 44.dp,

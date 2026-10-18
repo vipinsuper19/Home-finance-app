@@ -36,9 +36,19 @@ import java.time.Instant
  * foreign key on [TransactionEntity] additionally refuses to delete a category that still has
  * transactions, so even a mistaken `DELETE` cannot cascade a household's ledger into oblivion.
  *
+ * ### Marks
+ *
+ * [iconKey] names the picture drawn beside the category. It is **decoration, and only that**: no
+ * figure, total or filter has ever read it, and a category with an unrecognisable key is drawn with
+ * its name-derived mark rather than being treated as broken. See
+ * [com.homefinance.app.data.model.CategoryIconKey] for the values and for what `null` means.
+ *
  * @param id surrogate key, allocated by SQLite on insert (`0` means "not yet inserted").
  * @param name the display name, already normalised by [create] / [normalizeName].
  * @param type which side of the ledger this category belongs to.
+ * @param iconKey the stored mark, or `null` for "nobody chose one - derive it from the name". Every
+ *   row written before marks were stored, and every category the household adds through the picker,
+ *   is `null`; only the seeded categories carry a value.
  * @param isActive `false` once the category has been retired: it stays visible on historical
  *   transactions but is offered for new ones only when this is `true`.
  * @param createdAt audit timestamp (UTC instant) for when the row was written.
@@ -61,6 +71,9 @@ data class CategoryEntity(
 
     @ColumnInfo(name = "type")
     val type: TransactionType,
+
+    @ColumnInfo(name = "icon_key")
+    val iconKey: String? = null,
 
     @ColumnInfo(name = "is_active")
     val isActive: Boolean = true,
@@ -94,10 +107,12 @@ data class CategoryEntity(
         fun create(
             name: String,
             type: TransactionType,
+            iconKey: String? = null,
             createdAt: Instant = Instant.now(),
         ): CategoryEntity = CategoryEntity(
             name = requireValidName(name),
             type = type,
+            iconKey = iconKey,
             createdAt = createdAt,
         )
 

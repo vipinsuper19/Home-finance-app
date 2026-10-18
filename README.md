@@ -19,12 +19,14 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Emerald-green visual theme.
 - Offline-first application architecture.
 - Room database foundation with schema export.
-- Application-scoped, lazy database initialization.
-- Income/expense transaction and category tables, with tested version 1 to version 2, version 2 to version 3 and version 3 to version 4 migrations.
-- DAOs for categories and transactions, plus a repository layer that validates amounts, category references, and category types.
+- Application-scoped database initialization, created on first use rather than while the application object is being constructed, with one deliberate exception: the single start-up run that writes the categories the app ships with.
+- Income/expense transaction and category tables, with tested version 1 to version 2, version 2 to version 3, version 3 to version 4 and version 4 to version 5 migrations.
+- DAOs for categories, transactions, recurring schedules and application settings, plus a repository layer that validates amounts, category references, and category types.
 - A transaction list grouped under day headings, with a search box, all/income/expense filters and a month selector, showing each entry's category, description and amount in the colour of its direction.
 - Add income and add expense forms with exact paise parsing, validation, a date picker, and optional description and notes.
 - A separate category picker screen, listing the categories of the current type and offering to create one when there are none yet.
+- Twelve starter categories - milk, groceries, vegetables, home rent, shop rent, electricity, gas, internet, medical, transport, investments and salary - written once on the first start and then left alone: they can be renamed, retired or ignored like any other category, and no later start brings one back.
+- A category mark drawn with Compose Material icons rather than hand-drawn paths: a glyph on its own fixed tint and background, chosen by the category's stored icon key where one has been recorded and derived from its name otherwise, so a category the household adds still gets a sensible picture without being asked for one.
 - Optional quantity-and-rate entry for things bought by weight or volume, such as milk, with the amount derived from the two figures and stored alongside them.
 - A transaction details screen, opened by tapping a ledger row, showing the type, category, date, amount, optional quantity-and-rate, notes and the audit timestamps, with clear Edit and Delete actions.
 - Edit of an existing transaction through the same form the add screen uses, prefilled from the stored row and updating it in place: the row keeps its identifier and the day it was first recorded, and only the day it was last changed is re-stamped.
@@ -35,8 +37,8 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Generated recurring occurrences: the Recurring tab is opened, the dates the rule implies up to a bounded planning horizon are created, and a database unique index on (schedule, due date) makes a repeated, interrupted or concurrent run harmless.
 - Marking a recurring occurrence paid writes exactly one expense through the ordinary transaction path, links it to the occurrence and files it under the schedule's category, inside one database transaction and only if the occurrence is still pending.
 - Skipping an occurrence, pausing and resuming a schedule, and stopping a schedule for good: none of them write an expense, none of them delete anything, and pausing then resuming does not back-fill or duplicate dates.
-- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, repository validation, money and quantity input parsing and their edit round trips, date and timestamp formatting, transaction list filtering and grouping, category mark selection, the add, edit and details screen states, the recurrence calculator, the recurring list, form, details and occurrence view models, and the shared occurrence payment and skip state machine.
-- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety, the recurring unique index and foreign keys, the recurring repository and generator including concurrent and failed payments, and the transaction list, add-transaction form, edit-transaction form, category picker, transaction details, recurring list, recurring form, recurring details and occurrence history screens.
+- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, category mark keys and the list of categories the app ships with, the one-off category seeder, the category mark palette, repository validation, money and quantity input parsing and their edit round trips, date and timestamp formatting, transaction list filtering and grouping, the add, edit and details screen states, the recurrence calculator, the recurring list, form, details and occurrence view models, and the shared occurrence payment and skip state machine.
+- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety through every step to the current schema, the unique category-name index as both an insert and an ignore, the recurring unique index and foreign keys, category seeding including its rollback and its idempotence, the recurring repository and generator including concurrent and failed payments, and the transaction list, add-transaction form, edit-transaction form, category picker, transaction details, recurring list, recurring form, recurring details and occurrence history screens.
 - No backend or account registration required for the current architecture.
 
 ### Planned
@@ -60,6 +62,7 @@ Features will be marked as implemented as they are completed and verified.
 | Kotlin | Primary programming language |
 | Jetpack Compose | Declarative Android UI |
 | Material 3 | UI components and design system |
+| Material Icons (extended) | The glyphs drawn as category marks |
 | AndroidX Navigation Compose | App navigation |
 | Room | Local SQLite database |
 | KSP | Kotlin annotation processing for Room |
@@ -103,6 +106,7 @@ app/
 │   │   │   │   ├── common/
 │   │   │   │   ├── ui/
 │   │   │   │   │   ├── component/
+│   │   │   │   │   ├── icon/
 │   │   │   │   │   └── theme/
 │   │   │   │   └── util/
 │   │   │   ├── data/
@@ -220,7 +224,7 @@ The following rules guide financial feature development:
 - Preserve historical financial records when categories or recurring settings change.
 - Do not delete existing user data through destructive database migrations.
 - Use database migrations when the schema changes.
-- Do not insert demonstration transactions into the user's real financial records.
+- Do not insert demonstration transactions into the user's real financial records. The categories the app ships with are not records: a category carries no amount and no date, they are written once rather than on every start, and a household that does not want them can retire them and never see them again.
 - Test calculations, validation, and persistence independently of the UI.
 
 ## Recurring Expenses
@@ -321,9 +325,16 @@ Room schema exports are maintained under:
 app/schemas/
 ```
 
-Schema versions 1 to 4 are exported, with a tested migration for every step: version 1 to 2 introduced the
-financial tables, version 2 to 3 added quantity and rate, and version 3 to 4 added the recurring schedule and
-occurrence tables with their indices. Every migration is asserted to preserve the rows already on the device.
+Schema versions 1 to 5 are exported, with a tested migration for every step: version 1 to 2 introduced the
+financial tables, version 2 to 3 added quantity and rate, version 3 to 4 added the recurring schedule and
+occurrence tables with their indices, and version 4 to 5 added a category's stored icon key. Every migration
+is asserted to preserve the rows already on the device.
+
+The version 4 to 5 migration adds a nullable column and nothing else, so no existing category is given a mark
+it never had. The twelve categories the app ships with are written by the app itself, once, on the next start,
+and recorded in `app_setting`; a migration is not the place for that, because it would have to invent names a
+household may already use. Categories the household writes are stored with no icon key at all and are drawn
+from their name instead, which is exactly what every version before 5 did.
 Backup and restore behavior will be implemented and tested as the application evolves.
 
 **Privacy note:** Local-first storage does not automatically guarantee that every data path is private or excluded from device backup. Review Android backup rules and export behavior before using the application for sensitive financial records.
@@ -355,6 +366,7 @@ Testing will cover:
 - Currency formatting and monetary calculations.
 - Financial transaction validation.
 - Category and transaction persistence.
+- Category seeding: that the shipped categories are written once, invent no records, and can be retried safely.
 - Database migration safety.
 - Recurring schedule generation.
 - Date-range filtering.

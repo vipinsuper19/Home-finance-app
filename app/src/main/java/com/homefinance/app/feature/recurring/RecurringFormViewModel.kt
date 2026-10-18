@@ -387,7 +387,11 @@ class RecurringFormViewModel(
                         // Written back the way the household would have *typed* it, so saving an
                         // unchanged schedule stores exactly the same paise again.
                         amountInput = MoneyInput.toEditableText(row.amountPaise),
-                        category = CategoryOption(id = row.categoryId, name = row.categoryName),
+                        category = CategoryOption(
+                            id = row.categoryId,
+                            name = row.categoryName,
+                            iconKey = row.categoryIconKey,
+                        ),
                         frequency = row.frequency,
                         intervalInput = row.intervalCount.toString(),
                         startDate = row.startDate,
@@ -409,7 +413,7 @@ class RecurringFormViewModel(
             .map<List<CategoryEntity>, CategoriesUiState> { rows ->
                 CategoriesUiState.Ready(
                     rows.filter { it.isActive }
-                        .map { CategoryOption(id = it.id, name = it.name) },
+                        .map { CategoryOption(id = it.id, name = it.name, iconKey = it.iconKey) },
                 )
             }
             .onStart { emit(CategoriesUiState.Loading) }

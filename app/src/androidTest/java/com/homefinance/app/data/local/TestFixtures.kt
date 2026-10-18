@@ -38,13 +38,19 @@ internal fun inMemoryDatabase(): HomeFinanceDatabase =
         HomeFinanceDatabase::class.java,
     ).build()
 
-/** A category built the way production code builds one: through the normalising factory. */
+/**
+ * A category built the way production code builds one: through the normalising factory.
+ *
+ * @param iconKey the stored mark, or `null` - which is every category a household writes and every
+ *   row written before marks were stored.
+ */
 internal fun category(
     name: String,
     type: TransactionType,
     isActive: Boolean = true,
+    iconKey: String? = null,
 ): CategoryEntity = CategoryEntity
-    .create(name = name, type = type, createdAt = TEST_INSTANT)
+    .create(name = name, type = type, iconKey = iconKey, createdAt = TEST_INSTANT)
     .copy(isActive = isActive)
 
 internal fun transaction(

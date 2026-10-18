@@ -255,6 +255,7 @@ private fun DetailBody(
             name = schedule.name,
             description = schedule.description,
             categoryName = schedule.categoryName,
+            categoryIconKey = schedule.categoryIconKey,
             amountPaise = schedule.amountPaise,
             frequency = frequencySummary(schedule.frequency, schedule.intervalCount),
             status = schedule.status,

@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.homefinance.app.data.local.converter.HomeFinanceTypeConverters
+import com.homefinance.app.data.local.dao.AppSettingDao
 import com.homefinance.app.data.local.dao.CategoryDao
 import com.homefinance.app.data.local.dao.RecurringDao
 import com.homefinance.app.data.local.dao.TransactionDao
@@ -23,7 +24,8 @@ import com.homefinance.app.data.local.migration.HOME_FINANCE_MIGRATIONS
  * and [TransactionEntity], along with their indices and the foreign key between them - see
  * [HOME_FINANCE_MIGRATIONS] for the upgrade itself. Version 3 adds an entry's notes and the optional
  * quantity and rate it was bought by. Version 4 adds the recurring expense engine,
- * [RecurringScheduleEntity] and [RecurringOccurrenceEntity].
+ * [RecurringScheduleEntity] and [RecurringOccurrenceEntity]. Version 5 adds a category's stored mark,
+ * `categories.icon_key`.
  *
  * Conventions for the persistence layer:
  * - entities live in `com.homefinance.app.data.local.entity`
@@ -46,7 +48,7 @@ import com.homefinance.app.data.local.migration.HOME_FINANCE_MIGRATIONS
         RecurringScheduleEntity::class,
         RecurringOccurrenceEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 @TypeConverters(HomeFinanceTypeConverters::class)
@@ -57,6 +59,8 @@ abstract class HomeFinanceDatabase : RoomDatabase() {
     abstract fun transactionDao(): TransactionDao
 
     abstract fun recurringDao(): RecurringDao
+
+    abstract fun appSettingDao(): AppSettingDao
 
     companion object {
 
@@ -71,11 +75,15 @@ abstract class HomeFinanceDatabase : RoomDatabase() {
          * the only instance, so nothing else can accidentally open a second connection.
          *
          * Every known migration is registered up front, and there is no
-         * `fallbackToDestructiveMigration` and no seeding - schema changes ship as real
-         * migrations, and the database starts empty.
+         * `fallbackToDestructiveMigration` and no seeding *here* - schema changes ship as real
+         * migrations, and no financial table ever starts with a row in it. The categories the app
+         * ships with are written by
+         * [com.homefinance.app.data.repository.CategorySeeder] once, above this layer, and are empty
+         * buckets rather than money.
          *
-         * Constructing the database does **not** open it. The SQLite file is not touched until a
-         * DAO is actually queried, which is what keeps application start-up off the disk.
+         * Constructing the database does **not** open it. Opening happens on the first DAO call, and
+         * the one call the application itself makes at start-up is that seeding run - everything else
+         * waits until a screen asks for something.
          *
          * @param name the SQLite file to open. Production always takes the default, [NAME]. The
          *   parameter exists so that instrumented tests can open an *isolated* file through this
