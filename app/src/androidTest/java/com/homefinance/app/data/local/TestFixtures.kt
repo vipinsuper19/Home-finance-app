@@ -4,7 +4,12 @@ import android.database.sqlite.SQLiteConstraintException
 import androidx.room.Room
 import androidx.test.platform.app.InstrumentationRegistry
 import com.homefinance.app.data.local.entity.CategoryEntity
+import com.homefinance.app.data.local.entity.RecurringOccurrenceEntity
+import com.homefinance.app.data.local.entity.RecurringScheduleEntity
 import com.homefinance.app.data.local.entity.TransactionEntity
+import com.homefinance.app.data.model.RecurrenceFrequency
+import com.homefinance.app.data.model.RecurringOccurrenceStatus
+import com.homefinance.app.data.model.RecurringScheduleStatus
 import com.homefinance.app.data.model.TransactionType
 import java.time.Instant
 import java.time.LocalDate
@@ -60,6 +65,55 @@ internal fun transaction(
     quantityThousandths = quantityThousandths,
     ratePaise = ratePaise,
     transactionDate = transactionDate,
+    createdAt = TEST_INSTANT,
+    updatedAt = TEST_INSTANT,
+)
+
+/**
+ * A recurring schedule built the way production code builds one.
+ *
+ * The defaults describe a monthly expense on the 5th, so a test that only cares about one thing - a
+ * foreign key, an index - does not have to spell out a whole rule to say so.
+ */
+internal fun schedule(
+    categoryId: Long,
+    name: String = "Shop rent",
+    description: String? = null,
+    amountPaise: Long = 1_500_000L,
+    frequency: RecurrenceFrequency = RecurrenceFrequency.MONTHLY,
+    intervalCount: Int = 1,
+    startDate: LocalDate = LocalDate.of(2026, 10, 5),
+    endDate: LocalDate? = null,
+    status: RecurringScheduleStatus = RecurringScheduleStatus.ACTIVE,
+    generatedThrough: LocalDate? = null,
+): RecurringScheduleEntity = RecurringScheduleEntity(
+    name = name,
+    description = description,
+    categoryId = categoryId,
+    amountPaise = amountPaise,
+    frequency = frequency,
+    intervalCount = intervalCount,
+    startDate = startDate,
+    endDate = endDate,
+    status = status,
+    generatedThrough = generatedThrough,
+    createdAt = TEST_INSTANT,
+    updatedAt = TEST_INSTANT,
+)
+
+/** One scheduled occurrence, pending unless a test says otherwise. */
+internal fun occurrence(
+    scheduleId: Long,
+    dueDate: LocalDate = TEST_DATE,
+    amountPaise: Long = 1_500_000L,
+    status: RecurringOccurrenceStatus = RecurringOccurrenceStatus.PENDING,
+    transactionId: Long? = null,
+): RecurringOccurrenceEntity = RecurringOccurrenceEntity(
+    scheduleId = scheduleId,
+    dueDate = dueDate,
+    amountPaise = amountPaise,
+    status = status,
+    transactionId = transactionId,
     createdAt = TEST_INSTANT,
     updatedAt = TEST_INSTANT,
 )

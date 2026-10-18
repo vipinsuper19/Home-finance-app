@@ -2,7 +2,10 @@ package com.homefinance.app
 
 import android.app.Application
 import com.homefinance.app.data.local.HomeFinanceDatabase
+import com.homefinance.app.data.local.RoomTransactionRunner
 import com.homefinance.app.data.repository.CategoryRepository
+import com.homefinance.app.data.repository.RecurrenceGenerator
+import com.homefinance.app.data.repository.RecurringRepository
 import com.homefinance.app.data.repository.TransactionRepository
 
 /**
@@ -33,4 +36,30 @@ class HomeFinanceApp : Application() {
             categoryDao = database.categoryDao(),
         )
     }
+
+    /**
+     * Reads and writes for recurring schedules, their occurrences, and the payments recorded against
+     * them.
+     *
+     * The three collaborators are the whole wiring of the recurring engine: [RecurrenceGenerator]
+     * turns a schedule's rule into dated occurrences over the one recurring DAO,
+     * [RoomTransactionRunner] is what lets recording a payment write the expense and the link as one
+     * atomic unit, and the transaction and category repositories are the gates the payment and the
+     * validation go through rather than around.
+     */
+    val recurringRepository: RecurringRepository by lazy {
+        RecurringRepository(
+            recurringDao = database.recurringDao(),
+            transactions = transactionRepository,
+            categories = categoryRepository,
+            generator = RecurrenceGenerator(
+                recurringDao = database.recurringDao(),
+                transactionRunner = transactionRunner,
+            ),
+            transactionRunner = transactionRunner,
+        )
+    }
+
+    /** The one transaction scope on the one database; see [RoomTransactionRunner]. */
+    private val transactionRunner: RoomTransactionRunner by lazy { RoomTransactionRunner(database) }
 }

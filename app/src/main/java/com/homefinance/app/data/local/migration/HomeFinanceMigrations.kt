@@ -98,6 +98,95 @@ val MIGRATION_2_3: Migration = object : Migration(2, 3) {
 }
 
 /**
+ * Version 3 -> 4: the recurring expense engine's two tables.
+ *
+ * `recurring_schedules` holds a household's plans - rent on the 5th, milk every day, the cylinder
+ * every two months - and `recurring_occurrences` holds the dated occurrences each plan produces, one
+ * per due date, each carrying what became of it.
+ *
+ * Both tables start **empty**, and nothing existing is touched: `app_setting`, `categories` and
+ * `transactions` are not read, written or altered in any way, so a household's whole ledger and every
+ * category they have survive the upgrade exactly as they were. No schedule is invented for anyone -
+ * a table of made-up bills would be as bad as a table of made-up expenses.
+ *
+ * The occurrence table carries two foreign keys, and both are deliberate:
+ *
+ *  - to `recurring_schedules`, `ON DELETE RESTRICT`, so a schedule with history cannot be deleted out
+ *    from under the occurrences that point at it (the app retires schedules instead of deleting
+ *    them); and
+ *  - to `transactions`, `ON DELETE SET NULL`, so deleting an expense from the ledger - which the
+ *    household is free to do - leaves the occurrence honestly saying the payment *was* recorded while
+ *    no longer claiming a row that is gone. `RESTRICT` here would have silently broken deleting a
+ *    transaction from the ledger, which is a shipped feature.
+ *
+ * The unique index on `(schedule_id, due_date)` is the duplicate authority the whole engine relies
+ * on: with it, generating a schedule's occurrences can be run twice, or interrupted and re-run, and a
+ * bill can never be generated twice.
+ *
+ * The statements deliberately mirror, character for character, the SQL Room generates for the
+ * version-4 entities, and `HomeFinanceDatabaseMigrationTest` validates the result against the
+ * exported `4.json` on a device. Room compares the migrated schema to that file column by column,
+ * foreign key by foreign key and index by index, so a typo here would be caught before it could stop
+ * a household opening their own database.
+ */
+val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `recurring_schedules` " +
+                "(`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`name` TEXT NOT NULL, " +
+                "`description` TEXT, " +
+                "`category_id` INTEGER NOT NULL, " +
+                "`amount_paise` INTEGER NOT NULL, " +
+                "`frequency` TEXT NOT NULL, " +
+                "`interval_count` INTEGER NOT NULL, " +
+                "`start_date` INTEGER NOT NULL, " +
+                "`end_date` INTEGER, " +
+                "`status` TEXT NOT NULL, " +
+                "`generated_through` INTEGER, " +
+                "`created_at` INTEGER NOT NULL, " +
+                "`updated_at` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`category_id`) REFERENCES `categories`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE RESTRICT )",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_recurring_schedules_category_id` " +
+                "ON `recurring_schedules` (`category_id`)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_recurring_schedules_status` " +
+                "ON `recurring_schedules` (`status`)",
+        )
+
+        db.execSQL(
+            "CREATE TABLE IF NOT EXISTS `recurring_occurrences` " +
+                "(`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                "`schedule_id` INTEGER NOT NULL, " +
+                "`due_date` INTEGER NOT NULL, " +
+                "`amount_paise` INTEGER NOT NULL, " +
+                "`status` TEXT NOT NULL, " +
+                "`transaction_id` INTEGER, " +
+                "`created_at` INTEGER NOT NULL, " +
+                "`updated_at` INTEGER NOT NULL, " +
+                "FOREIGN KEY(`schedule_id`) REFERENCES `recurring_schedules`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE RESTRICT , " +
+                "FOREIGN KEY(`transaction_id`) REFERENCES `transactions`(`id`) " +
+                "ON UPDATE NO ACTION ON DELETE SET NULL )",
+        )
+        db.execSQL(
+            "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                "`index_recurring_occurrences_schedule_id_due_date` " +
+                "ON `recurring_occurrences` (`schedule_id`, `due_date`)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS `index_recurring_occurrences_transaction_id` " +
+                "ON `recurring_occurrences` (`transaction_id`)",
+        )
+    }
+}
+
+/**
  * Every schema migration the app knows about, oldest first.
  *
  * [com.homefinance.app.data.local.HomeFinanceDatabase.build] registers this whole array, so adding
@@ -108,4 +197,5 @@ val MIGRATION_2_3: Migration = object : Migration(2, 3) {
  * holds a household's ledger, and the alternative to writing a migration is asking the user to
  * lose it.
  */
-val HOME_FINANCE_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+val HOME_FINANCE_MIGRATIONS: Array<Migration> =
+    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)

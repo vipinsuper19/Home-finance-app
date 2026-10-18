@@ -283,7 +283,7 @@ internal fun AddTransactionContent(
  * screen.
  */
 @Composable
-private fun SaveFooter(
+internal fun SaveFooter(
     saveError: String?,
     isSaving: Boolean,
     saved: Boolean,
@@ -481,7 +481,7 @@ private fun AmountField(
  * only when a save was refused for want of one.
  */
 @Composable
-private fun CategoryField(
+internal fun CategoryField(
     category: CategoryOption?,
     type: TransactionType,
     showError: Boolean,
@@ -556,17 +556,19 @@ private fun CategoryField(
  * its own focus handling; an overlay is the standard recipe and keeps the tap target the whole
  * field. The overlay carries a button role and the "Date" description so a screen reader announces
  * it as an action rather than an edit box.
+ *
+ * @param label what the field is called. It defaults to the ledger's "Date" because that is the only
+ *   date a transaction has; a recurring schedule has two, so it names them itself.
  */
 @Composable
-private fun DateField(
+internal fun DateField(
     date: LocalDate,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    label: String = stringResource(R.string.add_transaction_date_label),
 ) {
-    val description = stringResource(R.string.add_transaction_date_label)
-
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        FieldLabel(text = description)
+        FieldLabel(text = label)
 
         Box(modifier = Modifier.fillMaxWidth()) {
             OutlinedTextField(
@@ -588,7 +590,7 @@ private fun DateField(
                 modifier = Modifier
                     .matchParentSize()
                     .clickable(role = Role.Button, onClick = onClick)
-                    .semantics { contentDescription = description },
+                    .semantics { contentDescription = label },
             )
         }
     }
@@ -652,7 +654,7 @@ private fun QuantityAndRate(
 
 /** A bold caption above a field, so the label survives the placeholder being typed over. */
 @Composable
-private fun FieldLabel(text: String, modifier: Modifier = Modifier) {
+internal fun FieldLabel(text: String, modifier: Modifier = Modifier) {
     Text(
         text = text,
         modifier = modifier,
@@ -674,7 +676,7 @@ private fun FieldLabel(text: String, modifier: Modifier = Modifier) {
  * value and nothing else, leaving the household to guess which box they are in.
  */
 @Composable
-private fun LabelledTextField(
+internal fun LabelledTextField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
@@ -719,7 +721,7 @@ private fun LabelledTextField(
  * changing one says "Update Transaction", and neither screen should have to know the other's words.
  */
 @Composable
-private fun SaveButton(
+internal fun SaveButton(
     isSaving: Boolean,
     saved: Boolean,
     actionLabel: String,
@@ -755,7 +757,7 @@ private fun SaveButton(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DatePickerSheet(
+internal fun DatePickerSheet(
     date: LocalDate,
     onDateSelected: (LocalDate) -> Unit,
     onDismiss: () -> Unit,

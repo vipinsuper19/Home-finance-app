@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.homefinance.app.data.local.migration.MIGRATION_1_2
 import com.homefinance.app.data.local.migration.MIGRATION_2_3
+import com.homefinance.app.data.local.migration.MIGRATION_3_4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -116,6 +117,137 @@ class HomeFinanceDatabaseMigrationTest {
             }
     }
 
+    // ----------------------------------------------------------- version 3 -> 4
+
+    @Test
+    fun migratingFrom3To4KeepsSettingsCategoriesAndTransactions() {
+        createVersion3DatabaseWithALedger()
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 4, true, MIGRATION_3_4).use { db ->
+            // The household's own rows, exactly as they were. A migration that adds two tables must not
+            // disturb anything that was already being counted.
+            assertEquals(3, rowCount(db, "app_setting"))
+            assertEquals(1, rowCount(db, "categories"))
+            assertEquals(2, rowCount(db, "transactions"))
+            assertEquals("Vipin", settingValue(db, "household_name"))
+            assertEquals("Groceries", firstCategoryName(db))
+            assertEquals(25_050L, transactionAmount(db, "1"))
+            assertEquals("Weekly shop", transactionDescription(db, "1"))
+            assertEquals("", settingValue(db, "empty_value"))
+        }
+    }
+
+    @Test
+    fun migratingFrom3To4AddsTheRecurringTablesEmpty() {
+        createVersion3DatabaseWithALedger()
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 4, true, MIGRATION_3_4).use { db ->
+            // Empty, deliberately: a migration must never invent a schedule or an expected payment. The
+            // household's recurring expenses begin when they add one.
+            assertEquals(0, rowCount(db, "recurring_schedules"))
+            assertEquals(0, rowCount(db, "recurring_occurrences"))
+        }
+    }
+
+    @Test
+    fun migratingFrom3To4GivesTheOccurrenceTableItsUniqueIndex() {
+        createVersion3DatabaseWithALedger()
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 4, true, MIGRATION_3_4).use { db ->
+            db.execSQL(
+                "INSERT INTO recurring_schedules " +
+                    "(id, name, category_id, amount_paise, frequency, interval_count, start_date, " +
+                    "status, created_at, updated_at) " +
+                    "VALUES (1, 'Shop rent', 1, 1500000, 'MONTHLY', 1, 20000, 'ACTIVE', 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO recurring_occurrences " +
+                    "(id, schedule_id, due_date, amount_paise, status, created_at, updated_at) " +
+                    "VALUES (1, 1, 20000, 1500000, 'PENDING', 1, 1)",
+            )
+
+            // The index is the duplicate authority the whole feature rests on: two occurrences of one
+            // schedule on one day must be impossible, whoever asks for them.
+            assertTrue(
+                "the unique (schedule_id, due_date) index is missing from the upgraded schema",
+                hasUniqueIndexOn(db, "recurring_occurrences", "schedule_id", "due_date"),
+            )
+            assertConstraintRefused(
+                db,
+                "INSERT INTO recurring_occurrences " +
+                    "(schedule_id, due_date, amount_paise, status, created_at, updated_at) " +
+                    "VALUES (1, 20000, 100, 'PENDING', 1, 1)",
+            )
+        }
+    }
+
+    @Test
+    fun migratingFrom3To4KeepsTheRecurringForeignKeysEnforced() {
+        createVersion3DatabaseWithALedger()
+
+        helper.runMigrationsAndValidate(DATABASE_NAME, 4, true, MIGRATION_3_4).use { db ->
+            // Foreign keys are a *per-connection* SQLite setting and are off on a bare handle like this
+            // one, so enforcement has to be asked for before it can be observed. Room asks for exactly
+            // this on every connection it opens, which is why the migrated schema behaves this way in the
+            // app - this test is about the keys the migration wrote, not about Room's connection settings.
+            db.setForeignKeyConstraintsEnabled(true)
+
+            // No such category, so no such schedule: a schedule is always filed under a real one.
+            assertConstraintRefused(
+                db,
+                "INSERT INTO recurring_schedules " +
+                    "(name, category_id, amount_paise, frequency, interval_count, start_date, status, " +
+                    "created_at, updated_at) " +
+                    "VALUES ('Shop rent', 42, 1500000, 'MONTHLY', 1, 20000, 'ACTIVE', 1, 1)",
+            )
+
+            db.execSQL(
+                "INSERT INTO recurring_schedules " +
+                    "(id, name, category_id, amount_paise, frequency, interval_count, start_date, " +
+                    "status, created_at, updated_at) " +
+                    "VALUES (1, 'Shop rent', 1, 1500000, 'MONTHLY', 1, 20000, 'ACTIVE', 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO recurring_occurrences " +
+                    "(id, schedule_id, due_date, amount_paise, status, transaction_id, created_at, updated_at) " +
+                    "VALUES (1, 1, 20000, 1500000, 'PAID', 1, 1, 1)",
+            )
+
+            // Deleting the expense leaves the occurrence in place, saying it was paid and no longer
+            // pointing at anything - rather than silently deleting the record that a bill was settled.
+            db.execSQL("DELETE FROM transactions WHERE id = 1")
+
+            assertEquals(1, rowCount(db, "recurring_occurrences"))
+            db.query("SELECT status, transaction_id FROM recurring_occurrences WHERE id = 1").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("PAID", cursor.getString(0))
+                assertTrue(cursor.isNull(1))
+            }
+        }
+    }
+
+    @Test
+    fun migratingAllTheWayFrom1To4KeepsSettingsAndLandsOnTheCurrentSchema() {
+        createVersion1DatabaseWithSettings()
+
+        // The whole chain a device running since the first build would walk, ending on the schema the app
+        // actually ships - validated against the exported 4.json.
+        helper.runMigrationsAndValidate(
+            DATABASE_NAME,
+            4,
+            true,
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+        ).use { db ->
+            assertEquals("Vipin", settingValue(db, "household_name"))
+            assertEquals(0, rowCount(db, "categories"))
+            assertEquals(0, rowCount(db, "transactions"))
+            assertEquals(0, rowCount(db, "recurring_schedules"))
+            assertEquals(0, rowCount(db, "recurring_occurrences"))
+        }
+    }
+
     /**
      * Builds the database exactly as version 1 shipped it, then writes rows through plain SQL -
      * deliberately not through the current DAOs, which would use the version-2 schema.
@@ -150,6 +282,73 @@ class HomeFinanceDatabaseMigrationTest {
             )
         }
     }
+
+    /**
+     * The same ledger as [createVersion2DatabaseWithALedger], written into a **version-3** file so the
+     * version-3-to-4 step can be exercised on its own.
+     *
+     * The settings rows are included as well, because the point of an additive migration is that it
+     * leaves *everything* it did not come to change exactly where it was.
+     */
+    private fun createVersion3DatabaseWithALedger() {
+        helper.createDatabase(DATABASE_NAME, 3).use { db ->
+            db.execSQL("INSERT INTO app_setting (setting_key, setting_value) VALUES ('currency_code', 'INR')")
+            db.execSQL("INSERT INTO app_setting (setting_key, setting_value) VALUES ('household_name', 'Vipin')")
+            db.execSQL("INSERT INTO app_setting (setting_key, setting_value) VALUES ('empty_value', '')")
+            db.execSQL(
+                "INSERT INTO categories (id, name, type, is_active, created_at) " +
+                    "VALUES (1, 'Groceries', 'EXPENSE', 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO transactions " +
+                    "(id, type, amount_paise, category_id, description, transaction_date, created_at, updated_at) " +
+                    "VALUES (1, 'EXPENSE', 25050, 1, 'Weekly shop', 20000, 1, 1)",
+            )
+            db.execSQL(
+                "INSERT INTO transactions " +
+                    "(id, type, amount_paise, category_id, description, transaction_date, created_at, updated_at) " +
+                    "VALUES (2, 'EXPENSE', 500, 1, NULL, 20001, 1, 1)",
+            )
+        }
+    }
+
+    /** True when [table] has a unique index whose columns are exactly [columns]. */
+    private fun hasUniqueIndexOn(
+        db: androidx.sqlite.db.SupportSQLiteDatabase,
+        table: String,
+        vararg columns: String,
+    ): Boolean = db.query("PRAGMA index_list(`$table`)").use { indexes ->
+        // `PRAGMA index_list` answers with (seq, name, unique, origin, partial): the name is column 1
+        // and the uniqueness flag is column 2. It is the index's *name* that `PRAGMA index_info` then
+        // wants, so reading them the other way round finds nothing and quietly reports a missing index.
+        while (indexes.moveToNext()) {
+            val unique = indexes.getInt(2) == 1
+            val name = indexes.getString(1)
+            if (!unique) continue
+
+            val indexed = db.query("PRAGMA index_info(`$name`)").use { info ->
+                val names = mutableListOf<String>()
+                while (info.moveToNext()) names += info.getString(2)
+                names
+            }
+            if (indexed == columns.toList()) return true
+        }
+        false
+    }
+
+    /** Asserts that [statement] is refused by the database, whatever constraint does the refusing. */
+    private fun assertConstraintRefused(
+        db: androidx.sqlite.db.SupportSQLiteDatabase,
+        statement: String,
+    ) {
+        try {
+            db.execSQL(statement)
+            org.junit.Assert.fail("Expected the database to refuse: $statement")
+        } catch (expected: android.database.sqlite.SQLiteException) {
+            // Exactly what was being asserted - a constraint refused it.
+        }
+    }
+
 
     private fun firstCategoryName(db: androidx.sqlite.db.SupportSQLiteDatabase): String? =
         db.query("SELECT name FROM categories").use { cursor ->

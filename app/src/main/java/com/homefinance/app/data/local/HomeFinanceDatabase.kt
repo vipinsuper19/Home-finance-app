@@ -7,9 +7,12 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.homefinance.app.data.local.converter.HomeFinanceTypeConverters
 import com.homefinance.app.data.local.dao.CategoryDao
+import com.homefinance.app.data.local.dao.RecurringDao
 import com.homefinance.app.data.local.dao.TransactionDao
 import com.homefinance.app.data.local.entity.AppSettingEntity
 import com.homefinance.app.data.local.entity.CategoryEntity
+import com.homefinance.app.data.local.entity.RecurringOccurrenceEntity
+import com.homefinance.app.data.local.entity.RecurringScheduleEntity
 import com.homefinance.app.data.local.entity.TransactionEntity
 import com.homefinance.app.data.local.migration.HOME_FINANCE_MIGRATIONS
 
@@ -19,7 +22,8 @@ import com.homefinance.app.data.local.migration.HOME_FINANCE_MIGRATIONS
  * Version 1 held only [AppSettingEntity]. Version 2 adds the financial tables, [CategoryEntity]
  * and [TransactionEntity], along with their indices and the foreign key between them - see
  * [HOME_FINANCE_MIGRATIONS] for the upgrade itself. Version 3 adds an entry's notes and the optional
- * quantity and rate it was bought by.
+ * quantity and rate it was bought by. Version 4 adds the recurring expense engine,
+ * [RecurringScheduleEntity] and [RecurringOccurrenceEntity].
  *
  * Conventions for the persistence layer:
  * - entities live in `com.homefinance.app.data.local.entity`
@@ -39,8 +43,10 @@ import com.homefinance.app.data.local.migration.HOME_FINANCE_MIGRATIONS
         AppSettingEntity::class,
         CategoryEntity::class,
         TransactionEntity::class,
+        RecurringScheduleEntity::class,
+        RecurringOccurrenceEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 @TypeConverters(HomeFinanceTypeConverters::class)
@@ -49,6 +55,8 @@ abstract class HomeFinanceDatabase : RoomDatabase() {
     abstract fun categoryDao(): CategoryDao
 
     abstract fun transactionDao(): TransactionDao
+
+    abstract fun recurringDao(): RecurringDao
 
     companion object {
 

@@ -19,7 +19,7 @@
     <string name="home_expense_label">Expenses</string>
     <string name="home_sample_badge">Sample data</string>
     <string name="home_next_steps_title">Coming next</string>
-    <string name="home_next_steps_body">Saved transactions, recurring payments including milk deliveries, and monthly reports.</string>
+    <string name="home_next_steps_body">Monthly reports and category breakdowns.</string>
 
     <!-- Transactions screen -->
     <string name="transactions_empty_title">No transactions yet</string>
@@ -144,9 +144,147 @@
     <string name="add_category_error_duplicate">That category already exists</string>
     <string name="add_category_error_failed">Could not create the category</string>
 
+    <!-- Recurring tab: the list of schedules -->
+    <string name="recurring_error_title">Could not load recurring expenses</string>
+    <string name="recurring_error_message">Something went wrong while reading your schedules. Nothing has been changed.</string>
+    <string name="recurring_error_retry">Try again</string>
+    <string name="recurring_add">Add recurring expense</string>
+    <string name="recurring_empty_title">No recurring expenses yet</string>
+    <string name="recurring_empty_message">Add rent, milk or any other bill that comes round, and Home Finance will tell you when it is next due.</string>
+    <string name="recurring_empty_action">Add your first schedule</string>
+    <string name="recurring_action_failed">Could not change that schedule. Nothing was changed.</string>
+    <string name="recurring_generation_failed">Some due dates could not be brought up to date. They will be filled in on your next visit.</string>
+
+    <!-- What a schedule still owes, on its list row -->
+    <string name="recurring_nothing_outstanding">Nothing outstanding</string>
+    <string name="recurring_next_due">Next: %1$s</string>
+    <string name="recurring_overdue_since">Overdue since %1$s</string>
+
+    <!-- How often a schedule repeats -->
+    <string name="recurring_frequency_daily">Daily</string>
+    <string name="recurring_frequency_weekly">Weekly</string>
+    <string name="recurring_frequency_monthly">Monthly</string>
+    <string name="recurring_frequency_yearly">Yearly</string>
+    <plurals name="recurring_frequency_every_days">
+        <item quantity="one">Every day</item>
+        <item quantity="other">Every %1$d days</item>
+    </plurals>
+    <plurals name="recurring_frequency_every_weeks">
+        <item quantity="one">Every week</item>
+        <item quantity="other">Every %1$d weeks</item>
+    </plurals>
+    <plurals name="recurring_frequency_every_months">
+        <item quantity="one">Every month</item>
+        <item quantity="other">Every %1$d months</item>
+    </plurals>
+    <plurals name="recurring_frequency_every_years">
+        <item quantity="one">Every year</item>
+        <item quantity="other">Every %1$d years</item>
+    </plurals>
+    <string name="recurring_frequency_unit_days">days</string>
+    <string name="recurring_frequency_unit_weeks">weeks</string>
+    <string name="recurring_frequency_unit_months">months</string>
+    <string name="recurring_frequency_unit_years">years</string>
+
+    <!-- Schedule statuses -->
+    <string name="recurring_status_active">Active</string>
+    <string name="recurring_status_paused">Paused</string>
+    <string name="recurring_status_retired">Stopped</string>
+
+    <!-- How one occurrence reads against today -->
+    <string name="recurring_occurrence_upcoming">Upcoming</string>
+    <string name="recurring_occurrence_due">Due today</string>
+    <string name="recurring_occurrence_overdue">Overdue</string>
+    <string name="recurring_occurrence_paid">Paid</string>
+    <string name="recurring_occurrence_skipped">Skipped</string>
+    <string name="recurring_occurrence_payment_removed">The recorded expense was removed</string>
+
+    <!-- One schedule's details -->
+    <string name="recurring_detail_title">Recurring expense</string>
+    <string name="recurring_missing_title">This schedule is gone</string>
+    <string name="recurring_missing_message">It is no longer in your records.</string>
+    <string name="recurring_missing_action">Back to recurring</string>
+    <string name="recurring_detail_category_label">Category</string>
+    <string name="recurring_detail_due_date_label">Due date</string>
+    <string name="recurring_detail_frequency_label">Repeats</string>
+    <string name="recurring_start_label">First occurrence</string>
+    <string name="recurring_end_label">Last occurrence</string>
+    <string name="recurring_end_none">Until paused</string>
+    <string name="recurring_detail_status_label">Status</string>
+    <string name="recurring_detail_occurrence_count_label">Dates generated</string>
+    <string name="recurring_detail_added_label">Added</string>
+    <string name="recurring_detail_expected_occurrence">Expected %1$s</string>
+    <string name="recurring_detail_nothing_due_title">Nothing due right now</string>
+    <string name="recurring_detail_nothing_due_message">The next date will appear here when it falls due.</string>
+    <string name="recurring_detail_history_title">Occurrence history</string>
+    <string name="recurring_detail_history_open">View all occurrences</string>
+    <string name="recurring_detail_edit">Edit schedule</string>
+    <string name="recurring_detail_pause">Pause</string>
+    <string name="recurring_detail_resume">Resume</string>
+    <string name="recurring_detail_stop">Stop</string>
+    <string name="recurring_detail_retired_note">This schedule is stopped. Its history is kept, and it will not generate any new dates.</string>
+
+    <!-- One schedule's occurrence history -->
+    <string name="recurring_occurrences_title">Occurrences</string>
+    <string name="recurring_occurrences_empty_title">No occurrences yet</string>
+    <string name="recurring_occurrences_empty_message">They appear here as each due date comes round.</string>
+
+    <!-- Recording that an occurrence was paid -->
+    <string name="recurring_pay_action">Mark as paid</string>
+    <string name="recurring_pay_title">Record this payment?</string>
+    <string name="recurring_pay_expected_label">Expected</string>
+    <string name="recurring_pay_amount_label">Amount paid (\u20B9)</string>
+    <string name="recurring_pay_hint">This adds one expense to your ledger. Nothing is recorded until you confirm.</string>
+    <string name="recurring_pay_confirm">Record payment</string>
+    <string name="recurring_pay_working">Recording...</string>
+
+    <!-- Deciding an occurrence was not paid -->
+    <string name="recurring_skip_action">Skip</string>
+    <string name="recurring_skip_title">Skip this occurrence?</string>
+    <string name="recurring_skip_message">%1$s due %2$s will not be paid. No expense is recorded, and this date will not come round again.</string>
+    <string name="recurring_skip_confirm">Skip</string>
+    <string name="recurring_skip_working">Skipping...</string>
+
+    <!-- Why settling an occurrence did not happen -->
+    <string name="recurring_settle_failure_missing">That occurrence is no longer there.</string>
+    <string name="recurring_settle_failure_settled">That occurrence had already been paid or skipped.</string>
+    <string name="recurring_settle_failure_generic">Could not record that. Nothing was changed.</string>
+
+    <!-- Stopping a schedule for good -->
+    <string name="recurring_stop_confirm_title">Stop this schedule?</string>
+    <string name="recurring_stop_confirm_message">It will not generate any new dates. Everything already recorded is kept, and this cannot be undone.</string>
+    <string name="recurring_stop_confirm_action">Stop schedule</string>
+
+    <!-- The add/edit recurring expense form -->
+    <string name="recurring_form_add_title">New recurring expense</string>
+    <string name="recurring_form_edit_title">Edit recurring expense</string>
+    <string name="recurring_form_name_label">Name</string>
+    <string name="recurring_form_name_placeholder">Shop rent</string>
+    <string name="recurring_form_name_error">Give this schedule a name</string>
+    <string name="recurring_form_description_label">Description (optional)</string>
+    <string name="recurring_form_description_placeholder">Ground floor, paid by UPI</string>
+    <string name="recurring_form_amount_label">Expected amount (\u20B9)</string>
+    <string name="recurring_form_frequency_label">Repeats</string>
+    <string name="recurring_form_interval_label">Repeat every (%1$s)</string>
+    <string name="recurring_end_optional_label">Last occurrence (optional)</string>
+    <string name="recurring_end_error">The last occurrence cannot be before the first</string>
+    <string name="recurring_end_clear">Clear</string>
+    <string name="recurring_form_save">Save schedule</string>
+    <string name="recurring_form_update">Save changes</string>
+    <string name="recurring_form_saving">Saving...</string>
+    <string name="recurring_form_load_error_title">Could not load this schedule</string>
+    <string name="recurring_form_load_error_message">Something went wrong while reading it. Nothing has been changed.</string>
+    <string name="recurring_form_save_error_missing">This schedule no longer exists. Nothing was saved.</string>
+    <string name="recurring_form_save_error_generic">Could not save. Nothing was changed.</string>
+
+    <!-- Why the repeat interval was refused -->
+    <string name="recurring_interval_error_blank">Enter how often this repeats</string>
+    <string name="recurring_interval_error_not_a_number">Enter a whole number</string>
+    <string name="recurring_interval_error_too_small">The interval must be at least 1</string>
+    <string name="recurring_interval_error_too_large">That interval is larger than this app can store</string>
+
     <!-- Destinations that are navigable but not implemented yet -->
     <string name="placeholder_coming_soon">Coming soon</string>
-    <string name="recurring_placeholder">Recurring bills, subscriptions and milk deliveries are coming soon.</string>
     <string name="reports_placeholder">Monthly summaries and category breakdowns are coming soon.</string>
     <string name="settings_placeholder">Currency, categories, reminders and other preferences are coming soon.</string>
 </resources>

@@ -4,6 +4,7 @@ import com.homefinance.app.data.local.dao.CategoryDao
 import com.homefinance.app.data.local.entity.CategoryEntity
 import com.homefinance.app.data.model.TransactionType
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 
 /**
@@ -27,6 +28,15 @@ class FakeCategoryDao(initial: List<CategoryEntity> = emptyList()) : CategoryDao
     /** Every entity passed to [insert], in call order, exactly as it arrived. */
     val inserted: MutableList<CategoryEntity> = mutableListOf()
 
+    /**
+     * When set, both observe flows fail with it.
+     *
+     * A category read is the one thing on the recurring form that can fail without the household doing
+     * anything wrong, so a JVM test needs a way to say "this read is broken" without corrupting the
+     * rows themselves.
+     */
+    var failure: Throwable? = null
+
     override suspend fun insert(category: CategoryEntity): Long {
         val id = if (category.id != 0L) category.id else nextId++
         rows[id] = category.copy(id = id)
@@ -40,11 +50,15 @@ class FakeCategoryDao(initial: List<CategoryEntity> = emptyList()) : CategoryDao
 
     override suspend fun getById(id: Long): CategoryEntity? = rows[id]
 
-    override fun observeAll(): Flow<List<CategoryEntity>> =
-        flowOf(rows.values.sortedWith(ACTIVE_FIRST_THEN_NAME))
+    override fun observeAll(): Flow<List<CategoryEntity>> {
+        failure?.let { return flow { throw it } }
+        return flowOf(rows.values.sortedWith(ACTIVE_FIRST_THEN_NAME))
+    }
 
-    override fun observeByType(type: TransactionType): Flow<List<CategoryEntity>> =
-        flowOf(rows.values.filter { it.type == type }.sortedWith(ACTIVE_FIRST_THEN_NAME))
+    override fun observeByType(type: TransactionType): Flow<List<CategoryEntity>> {
+        failure?.let { return flow { throw it } }
+        return flowOf(rows.values.filter { it.type == type }.sortedWith(ACTIVE_FIRST_THEN_NAME))
+    }
 
     override suspend fun deactivate(id: Long) {
         rows[id]?.let { rows[id] = it.copy(isActive = false) }

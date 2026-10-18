@@ -61,7 +61,10 @@ fun HomeFinanceShell(modifier: Modifier = Modifier) {
  * screen rather than hiding its own action below the fold. The tab a transaction belongs to stays
  * named meanwhile - see [HomeFinanceBottomBar] - so the bar can never appear with nothing selected.
  *
- * The ledger itself is a tab, so it keeps its bar.
+ * A recurring schedule's details, its occurrence history and the forms that create and change it take
+ * the whole screen for exactly the same reasons.
+ *
+ * The ledger itself is a tab, so it keeps its bar - and so does the recurring list, which is the tab.
  *
  * Null - before the nav host has composed for the first time - shows the bar, because the start
  * destination is always Home and the bar cannot flash away for a route that is not yet known.
@@ -70,7 +73,12 @@ internal fun NavDestination?.showsBottomBar(): Boolean = !(this?.hierarchy?.any 
     destination.hasRoute<TransactionDetailRoute>() ||
         destination.hasRoute<AddTransactionRoute>() ||
         destination.hasRoute<EditTransactionRoute>() ||
-        destination.hasRoute<CategoryPickerRoute>()
+        destination.hasRoute<CategoryPickerRoute>() ||
+        destination.hasRoute<RecurringDetailRoute>() ||
+        destination.hasRoute<RecurringOccurrencesRoute>() ||
+        destination.hasRoute<AddRecurringRoute>() ||
+        destination.hasRoute<EditRecurringRoute>() ||
+        destination.hasRoute<RecurringCategoryPickerRoute>()
 } == true)
 
 /**

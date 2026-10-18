@@ -18,6 +18,12 @@ import com.homefinance.app.feature.addtransaction.AddTransactionViewModel
 import com.homefinance.app.feature.addtransaction.CategoryPickerScreen
 import com.homefinance.app.feature.addtransaction.EditTransactionScreen
 import com.homefinance.app.feature.home.HomeScreen
+import com.homefinance.app.feature.recurring.AddRecurringScreen
+import com.homefinance.app.feature.recurring.EditRecurringScreen
+import com.homefinance.app.feature.recurring.RecurringCategoryPickerScreen
+import com.homefinance.app.feature.recurring.RecurringDetailScreen
+import com.homefinance.app.feature.recurring.RecurringFormViewModel
+import com.homefinance.app.feature.recurring.RecurringOccurrencesScreen
 import com.homefinance.app.feature.recurring.RecurringScreen
 import com.homefinance.app.feature.reports.ReportsScreen
 import com.homefinance.app.feature.settings.SettingsScreen
@@ -50,7 +56,10 @@ fun HomeFinanceNavHost(
             )
         }
         composable<RecurringRoute> {
-            RecurringScreen()
+            RecurringScreen(
+                onAddSchedule = { navController.navigate(AddRecurringRoute) },
+                onOpenSchedule = { id -> navController.navigate(RecurringDetailRoute(id)) },
+            )
         }
         composable<ReportsRoute> {
             ReportsScreen()
@@ -73,12 +82,38 @@ fun HomeFinanceNavHost(
             )
         }
 
+        composable<RecurringDetailRoute> { entry ->
+            val scheduleId = entry.toRoute<RecurringDetailRoute>().scheduleId
+
+            RecurringDetailScreen(
+                scheduleId = scheduleId,
+                onBack = { navController.navigateUp() },
+                onEdit = { navController.navigate(EditRecurringRoute(scheduleId)) },
+                onOpenOccurrences = { navController.navigate(RecurringOccurrencesRoute(scheduleId)) },
+            )
+        }
+        composable<RecurringOccurrencesRoute> { entry ->
+            RecurringOccurrencesScreen(
+                scheduleId = entry.toRoute<RecurringOccurrencesRoute>().scheduleId,
+                onBack = { navController.navigateUp() },
+            )
+        }
+
         transactionFormFlow(
             navController = navController,
             addViewModelFactory = AddTransactionViewModel.factory(TransactionType.EXPENSE),
             editViewModelFactory = { id ->
                 AddTransactionViewModel.factory(TransactionType.EXPENSE, editingId = id)
             },
+            onBack = { navController.navigateUp() },
+            onSaved = { navController.navigateUp() },
+            onEdited = { navController.navigateUp() },
+        )
+
+        recurringFormFlow(
+            navController = navController,
+            addViewModelFactory = RecurringFormViewModel.factory(),
+            editViewModelFactory = { id -> RecurringFormViewModel.factory(editingId = id) },
             onBack = { navController.navigateUp() },
             onSaved = { navController.navigateUp() },
             onEdited = { navController.navigateUp() },
@@ -182,6 +217,86 @@ private fun NavBackStackEntry.sharedFormViewModel(
     viewModelFactory: ViewModelProvider.Factory,
 ): AddTransactionViewModel {
     val graphEntry = remember(this) { navController.getBackStackEntry<TransactionFormGraph>() }
+
+    return viewModel(
+        viewModelStoreOwner = graphEntry,
+        factory = viewModelFactory,
+    )
+}
+
+/**
+ * The recurring form flow: the two forms and the expense-category picker they both open, as one nested
+ * graph.
+ *
+ * The same shape as [transactionFormFlow], and extracted for the same reason: a device test can drive
+ * the **real** graph - the real routes, the real shared scoping - while swapping only where the data
+ * comes from, so the wiring the household actually walks is the wiring the test walks. A test that
+ * rebuilt the graph for itself would prove the test's copy works, which is worth nothing.
+ *
+ * @param addViewModelFactory how the form that creates a schedule is built, and also the factory the
+ *   picker is handed. The picker can never be the first of the three to compose - it is only reachable
+ *   from a form, which will already have built the view model - so the factory it is given is never
+ *   actually consulted.
+ * @param editViewModelFactory how the form that changes an existing schedule is built, from the id it
+ *   is changing.
+ * @param onBack a form was dismissed without saving. The picker's own back step stays inside the flow,
+ *   because backing out of the picker returns to the form rather than leaving it.
+ * @param onSaved a new schedule was written and the add form is finished with.
+ * @param onEdited an existing schedule was rewritten and the edit form is finished with.
+ */
+internal fun NavGraphBuilder.recurringFormFlow(
+    navController: NavHostController,
+    addViewModelFactory: ViewModelProvider.Factory,
+    editViewModelFactory: (Long) -> ViewModelProvider.Factory,
+    onBack: () -> Unit,
+    onSaved: () -> Unit,
+    onEdited: () -> Unit,
+) {
+    navigation<RecurringFormGraph>(startDestination = AddRecurringRoute) {
+        composable<AddRecurringRoute> { entry ->
+            AddRecurringScreen(
+                onBack = onBack,
+                onSaved = onSaved,
+                onPickCategory = { navController.navigate(RecurringCategoryPickerRoute) },
+                viewModel = entry.sharedRecurringFormViewModel(navController, addViewModelFactory),
+            )
+        }
+        composable<EditRecurringRoute> { entry ->
+            val scheduleId = entry.toRoute<EditRecurringRoute>().scheduleId
+
+            EditRecurringScreen(
+                scheduleId = scheduleId,
+                onBack = onBack,
+                onFinished = onEdited,
+                onPickCategory = { navController.navigate(RecurringCategoryPickerRoute) },
+                viewModel = entry.sharedRecurringFormViewModel(
+                    navController = navController,
+                    viewModelFactory = remember(scheduleId) { editViewModelFactory(scheduleId) },
+                ),
+            )
+        }
+        composable<RecurringCategoryPickerRoute> { entry ->
+            RecurringCategoryPickerScreen(
+                onBack = { navController.navigateUp() },
+                viewModel = entry.sharedRecurringFormViewModel(navController, addViewModelFactory),
+            )
+        }
+    }
+}
+
+/**
+ * The one [RecurringFormViewModel] a recurring form and its category picker both render.
+ *
+ * Looked up from the graph's route, so both screens resolve to the same instance no matter which of
+ * them is on top - and, when the flow was entered at the edit form, that instance is the edit form's
+ * own, carrying the row it is changing.
+ */
+@Composable
+private fun NavBackStackEntry.sharedRecurringFormViewModel(
+    navController: NavHostController,
+    viewModelFactory: ViewModelProvider.Factory,
+): RecurringFormViewModel {
+    val graphEntry = remember(this) { navController.getBackStackEntry<RecurringFormGraph>() }
 
     return viewModel(
         viewModelStoreOwner = graphEntry,

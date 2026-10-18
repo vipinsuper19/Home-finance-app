@@ -71,7 +71,17 @@ private fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
                     navDestination.hasRoute<AddTransactionRoute>() ||
                     navDestination.hasRoute<EditTransactionRoute>() ||
                     navDestination.hasRoute<CategoryPickerRoute>()
-            TopLevelDestination.Recurring -> navDestination.hasRoute<RecurringRoute>()
+            TopLevelDestination.Recurring ->
+                // Everything about a recurring schedule is reached from this tab - the list, one
+                // schedule's details, its occurrence history, and the forms that create and change it
+                // with the picker they open - so this tab is the one to name if any of them ever has
+                // the bar above it.
+                navDestination.hasRoute<RecurringRoute>() ||
+                    navDestination.hasRoute<RecurringDetailRoute>() ||
+                    navDestination.hasRoute<RecurringOccurrencesRoute>() ||
+                    navDestination.hasRoute<AddRecurringRoute>() ||
+                    navDestination.hasRoute<EditRecurringRoute>() ||
+                    navDestination.hasRoute<RecurringCategoryPickerRoute>()
             TopLevelDestination.Reports -> navDestination.hasRoute<ReportsRoute>()
         }
     } == true

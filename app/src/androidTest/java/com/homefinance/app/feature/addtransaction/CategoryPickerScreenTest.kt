@@ -204,6 +204,14 @@ class CategoryPickerScreenTest {
         categoryDialog = categoryDialog,
     )
 
+    /**
+     * Renders the shared picker body.
+     *
+     * The picker takes the four facts it draws - the categories, which one is chosen, the entry's type and
+     * the "new category" dialog if one is open - rather than a whole transaction-form state. It is rendered
+     * by two features now, and reading a transaction form's state here would have made the picker's own
+     * tests depend on a screen it has nothing to do with.
+     */
     private fun render(
         uiState: AddTransactionUiState,
         onCategorySelected: (Long) -> Unit = {},
@@ -213,7 +221,10 @@ class CategoryPickerScreenTest {
         composeTestRule.setContent {
             HomeFinanceTheme {
                 CategoryPickerContent(
-                    uiState = uiState,
+                    categories = uiState.categories,
+                    selectedId = uiState.category?.id,
+                    type = uiState.type,
+                    dialog = uiState.categoryDialog,
                     onCategorySelected = onCategorySelected,
                     onAddCategory = onAddCategory,
                     onCategoryNameChange = {},

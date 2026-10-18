@@ -1,7 +1,5 @@
 package com.homefinance.app.feature.addtransaction
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,38 +7,30 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Warning
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -48,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.homefinance.app.R
 import com.homefinance.app.core.ui.component.HomeFinanceTopBar
+import com.homefinance.app.core.ui.component.StatusPane
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
 import com.homefinance.app.data.model.TransactionType
 
@@ -94,7 +85,10 @@ fun CategoryPickerScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     CategoryPickerContent(
-        uiState = uiState,
+        categories = uiState.categories,
+        selectedId = uiState.category?.id,
+        type = uiState.type,
+        dialog = uiState.categoryDialog,
         onCategorySelected = { categoryId ->
             viewModel.onCategorySelected(categoryId)
             onBack()
@@ -110,15 +104,29 @@ fun CategoryPickerScreen(
 }
 
 /**
- * The picker's body, taking its state and every action as parameters.
+ * The picker's body, taking exactly the facts it draws and every action as parameters.
  *
  * Split out from [CategoryPickerScreen] so each of the four states the list can be in - loading,
  * failed, empty, and populated - can be rendered and asserted directly, including the failure a real
  * database will not produce on demand.
+ *
+ * The parameters are primitives rather than a whole form state so that the *same* picker can serve a
+ * second kind of form. A recurring schedule picks an expense category exactly as a transaction does,
+ * and a picker that only understood `AddTransactionUiState` would have to be written a second time -
+ * which is how two pickers end up disagreeing about which categories may be offered.
+ *
+ * @param categories the list as it stands, including its loading and failed states.
+ * @param selectedId the id of the chosen category, so its row can show the tick, or `null`.
+ * @param type whether income or expense categories are being chosen; it only decides the marks' colour
+ *   and is never used to filter, because the list handed in is already filtered.
+ * @param dialog the "new category" dialog's state, or `null` when it is closed.
  */
 @Composable
 internal fun CategoryPickerContent(
-    uiState: AddTransactionUiState,
+    categories: CategoriesUiState,
+    selectedId: Long?,
+    type: TransactionType,
+    dialog: CategoryDialogState?,
     onCategorySelected: (Long) -> Unit,
     onAddCategory: () -> Unit,
     onCategoryNameChange: (String) -> Unit,
@@ -128,8 +136,6 @@ internal fun CategoryPickerContent(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val selectedId = uiState.category?.id
-
     Column(modifier = modifier.fillMaxSize()) {
         HomeFinanceTopBar(
             title = stringResource(R.string.category_picker_title),
@@ -145,15 +151,15 @@ internal fun CategoryPickerContent(
         )
 
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            when (val categories = uiState.categories) {
-                CategoriesUiState.Loading -> PickerStatus(
+            when (categories) {
+                CategoriesUiState.Loading -> StatusPane(
                     icon = Icons.AutoMirrored.Outlined.List,
                     title = stringResource(R.string.category_picker_loading),
                     message = null,
                     modifier = Modifier.align(Alignment.Center),
                 )
 
-                is CategoriesUiState.Failed -> PickerStatus(
+                is CategoriesUiState.Failed -> StatusPane(
                     icon = Icons.Outlined.Warning,
                     title = stringResource(R.string.category_picker_failed),
                     message = null,
@@ -169,7 +175,7 @@ internal fun CategoryPickerContent(
 
                 is CategoriesUiState.Ready ->
                     if (categories.options.isEmpty()) {
-                        PickerStatus(
+                        StatusPane(
                             icon = Icons.Filled.Add,
                             title = stringResource(R.string.category_picker_empty),
                             message = null,
@@ -187,7 +193,7 @@ internal fun CategoryPickerContent(
                         CategoryList(
                             options = categories.options,
                             selectedId = selectedId,
-                            type = uiState.type,
+                            type = type,
                             onCategorySelected = onCategorySelected,
                         )
                     }
@@ -195,7 +201,6 @@ internal fun CategoryPickerContent(
         }
     }
 
-    val dialog = uiState.categoryDialog
     if (dialog != null) {
         AddCategoryDialog(
             dialog = dialog,
@@ -282,79 +287,21 @@ private fun CategoryRow(
     }
 }
 
-/**
- * A centred glyph with a headline beneath it, for the states that have no rows to show.
- *
- * Mirrors the ledger's status message deliberately: a failure should look the same kind of thing
- * wherever it happens, and a failed read must not be dressed in the reassuring green an empty list
- * uses.
- */
-@Composable
-private fun PickerStatus(
-    icon: ImageVector,
-    title: String,
-    message: String?,
-    modifier: Modifier = Modifier,
-    accentColor: Color = MaterialTheme.colorScheme.secondaryContainer,
-    accentContentColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
-    action: (@Composable () -> Unit)? = null,
-) {
-    Column(
-        modifier = modifier.padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Surface(
-            shape = CircleShape,
-            color = accentColor,
-            contentColor = accentContentColor,
-        ) {
-            Box(
-                modifier = Modifier.size(64.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(imageVector = icon, contentDescription = null)
-            }
-        }
-        Spacer(modifier = Modifier.height(20.dp))
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-            textAlign = TextAlign.Center,
-        )
-        if (message != null) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
-        if (action != null) {
-            Spacer(modifier = Modifier.height(16.dp))
-            action()
-        }
-    }
-}
-
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun CategoryPickerContentPreview() {
     HomeFinanceTheme {
         CategoryPickerContent(
-            uiState = AddTransactionUiState(
-                type = TransactionType.EXPENSE,
-                date = java.time.LocalDate.of(2026, 10, 15),
-                category = CategoryOption(id = 2L, name = "Groceries"),
-                categories = CategoriesUiState.Ready(
-                    options = listOf(
-                        CategoryOption(id = 1L, name = "Electricity"),
-                        CategoryOption(id = 2L, name = "Groceries"),
-                        CategoryOption(id = 3L, name = "Milk"),
-                    ),
+            categories = CategoriesUiState.Ready(
+                options = listOf(
+                    CategoryOption(id = 1L, name = "Electricity"),
+                    CategoryOption(id = 2L, name = "Groceries"),
+                    CategoryOption(id = 3L, name = "Milk"),
                 ),
             ),
+            selectedId = 2L,
+            type = TransactionType.EXPENSE,
+            dialog = null,
             onCategorySelected = {},
             onAddCategory = {},
             onCategoryNameChange = {},
