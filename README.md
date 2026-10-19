@@ -39,8 +39,11 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Marking a recurring occurrence paid writes exactly one entry in the category's direction through the ordinary transaction path, links it to the occurrence and files it under the schedule's category, inside one database transaction and only if the occurrence is still pending - confirmed from a bottom sheet that states the date, the expected figure, the category and the description the entry will carry and reuses the ledger form's own amount field.
 - Skipping an occurrence, pausing and resuming a schedule, and stopping a schedule for good: none of them write a transaction, none of them delete anything, and pausing then resuming does not back-fill or duplicate dates.
 - The Home dashboard's recurring section, read from the household's own occurrences rather than from sample data: what is late, what is due today and what is coming, each group counted and each date showing the schedule's name, the category's mark, how the date comes round, the amount that was expected on *that* date and how far off it is in words ("3 days overdue", "Due in 5 days"). Overdue dates are drawn first and are never trimmed; upcoming dates are previewed five at a time with the heading still stating how many there are in all; a state with nothing to show says "Nothing due today" rather than drawing a blank, a household with no schedules at all is invited to add one, and the section carries its own loading, failure and retry states without taking the rest of the dashboard down with it.
-- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, the dashboard's classification of a date as overdue, due today or upcoming and its preview limit, type conversion, category naming, category mark keys and the list of categories the app ships with, the one-off category seeder, the category mark palette, repository validation, money and quantity input parsing and their edit round trips, date and timestamp formatting, transaction list filtering and grouping, the add, edit and details screen states, the recurrence calculator, the recurring list, form, details and occurrence view models, and the shared occurrence payment and skip state machine.
-- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety through every step to the current schema, the unique category-name index as both an insert and an ignore, the recurring unique index and foreign keys, the outstanding-occurrence read behind the Home dashboard and its schedule count, category seeding including its rollback and its idempotence, the recurring repository and generator including concurrent and failed payments, and the transaction list, add-transaction form, edit-transaction form, category picker, transaction details, recurring list, recurring form, recurring details, occurrence history and Home dashboard sections.
+- A Reports dashboard for a chosen monthly window - This Month, 3 Months, 6 Months or 1 Year - opening with the current month, stepping backwards and forwards by its own length and refusing to step past the month the device is in, with the window named in words and the current month marked as still running. Its figures are exact integer paise read from the household's own ledger: income, expenses, net cash flow, the count of entries behind each figure, a savings rate and a comparison against the previous window of the same length - each shown only when it says something true, so a window with no income states no savings rate and a window with nothing to compare against shows no badge.
+- An income-against-expenses chart and an Expenses by Category ring, both drawn from the same reads as the summary above them, with the ring listing every category largest-first, each naming what it came to and its share, each one tappable. For a one-month window the chart is bucketed by week; for longer windows by month. Empty directions and empty windows are stated in words rather than drawn as zeroes, and the five largest entries of the window are listed and open their own details.
+- A monthly trend covering the six months ending with the window's last month, so the month being read is always the right-hand bar, and a category drill-down opened by tapping a category that reports, for the same window, what that category came to, how many entries made it up, their average, its share of that direction's total, its own trend, its largest entries and every entry grouped under the day it was recorded - each openable.
+- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, the dashboard's classification of a date as overdue, due today or upcoming and its preview limit, type conversion, category naming, category mark keys and the list of categories the app ships with, the one-off category seeder, the category mark palette, repository validation, money and quantity input parsing and their edit round trips, date and timestamp formatting, transaction list filtering and grouping, the add, edit and details screen states, the recurrence calculator, the recurring list, form, details and occurrence view models, the shared occurrence payment and skip state machine, and the report window arithmetic, daily-to-weekly and daily-to-monthly folding, category shares and percentages, axis scaling, and the Reports and category drill-down view models including their refresh after a write.
+- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety through every step to the current schema, the unique category-name index as both an insert and an ignore, the recurring unique index and foreign keys, the outstanding-occurrence read behind the Home dashboard and its schedule count, category seeding including its rollback and its idempotence, the recurring repository and generator including concurrent and failed payments, and the transaction list, add-transaction form, edit-transaction form, category picker, transaction details, recurring list, recurring form, recurring details, occurrence history and Home dashboard sections, and the report aggregate and listing queries, the reports repository against a real database and both report screens.
 - No backend or account registration required for the current architecture.
 
 ### Planned
@@ -49,7 +52,6 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Track daily milk purchases over time, now that a single purchase can be recorded by quantity and rate.
 - Track monthly rental income.
 - Record expected and actual rent receipts, including partial payments and outstanding balances.
-- View monthly income, expenses, and net balance.
 - Schedule reminders for recurring payments.
 - Export financial records and support backup and restore.
 - Add validation and tests for financial calculations and data integrity.
@@ -220,6 +222,12 @@ The following rules guide financial feature development:
 - Avoid floating-point values for financial calculations.
 - Store a typed quantity as integer thousandths and a rate as integer paise per unit, so a purchase by weight or volume is recorded as the two figures the household actually saw rather than only as a total.
 - Keep expected amounts distinct from actual payments.
+- Derive reporting figures from the ledger rather than from a second set of rules: income is the sum of the
+  entries of type income in the window, expenses the sum of the entries of type expense, and net cash flow is
+  income minus expenses. A report is a reading of what was recorded, not a separate account.
+- Decide every calendar rule in Kotlin against `LocalDate`: which day a week starts on, which month a date is in,
+  and how a longer window is folded into bars. SQLite sums money and groups rows; it is never asked what a month
+  is, so a report boundary is the household's own local day rather than the database server's.
 - Treat a recurring schedule as a plan rather than a payment: generating a due date must never insert a transaction or move a total.
 - Take a recurring schedule's direction from its category's own type rather than from a property of the schedule, so a schedule cannot record income as an expense or the other way round.
 - Never mark a scheduled occurrence paid merely because its due date has passed.
@@ -362,6 +370,77 @@ section is affected by it.
 - Deleting a recorded payment from the ledger leaves the occurrence saying it was paid and marks the link as
   gone. It does not reopen the occurrence or make the date generatable again.
 
+## Reports
+
+The Reports tab answers three questions about one window and nothing else: what came in, what went out, and what
+was left. Every figure on it is read from the household's own transactions - there is no sample data anywhere in
+the feature - and a window with nothing in it says so rather than showing zeroes dressed as a chart.
+
+### What the figures mean
+
+- **Income** is the sum of the ledger entries of type income whose date falls inside the window; **expenses** is
+  the same for entries of type expense. Both are exact `Long` paise, summed by SQLite, counted so a large figure
+  from one entry is distinguishable from the same figure from thirty, and never re-derived by a second rule.
+- **Net cash flow** is income minus expenses. It is negative when the window spent more than it took in, and it
+  is drawn as a loss rather than left for the reader to subtract.
+- **Savings rate** is net cash flow as a whole-number percentage of income, and it is shown only when income is
+  greater than zero. A window with no income states no rate at all: "0%" would read as "we saved nothing" when
+  the truth is that nothing came in. A negative net is stated in words - how much more was spent than came in -
+  because a negative percentage of income is a double negative.
+- A **comparison** against the previous window of the same length sits beside each amount, but only when the
+  earlier figure was greater than zero. "Up 100%" against a month in which nothing happened is arithmetic
+  dressed as news.
+- A recurring occurrence that has been generated but not paid is **not** income and **not** an expense. A
+  schedule is a plan and only a payment is a fact, so marking one paid moves the report by that one occurrence -
+  because that is the moment an entry is written.
+
+### Windows and buckets
+
+- The window is This Month, 3 Months, 6 Months or 1 Year, always a whole number of calendar months ending on a
+  calendar month, so "last month" means the same thing whenever it is read.
+- Previous and Next step the window by its own length. Next is refused past the month the device is in: there is
+  no report for a period that has not happened.
+- Boundaries are **device-local calendar days**, inclusive at both ends. A one-month window is bucketed by week
+  for the chart, longer windows by month, because fifty-two weekly bars on a phone would be a texture rather than
+  a chart.
+- The monthly trend covers the six months ending with the window's last month, so the month being read is always
+  the right-hand bar, and each bar is labelled.
+- A window that holds nothing, a direction that holds nothing, and a read that failed are three different
+  states, and each says which one it is.
+
+### Drilling into a category
+
+Tapping a category opens its own report for the same window: what it came to, how many entries made it up and
+their average, its share of that direction's total in the window, its own trend, its largest entries, and every
+entry grouped under the day it was recorded. The period travels with the tap, so the drill-down opens on the
+window the household was already reading rather than on a default one. A category that the database no longer
+has is said to be gone rather than to be empty, and its entries are still counted under the name they were filed
+under, because retiring a category does not rewrite history.
+
+### Three deliberate departures from the design
+
+The design image this feature was built from draws three summary figures across the screen, an "Others" bucket
+and "View All" links. Three departures were made, and they are the only ones:
+
+- The three summary figures are full-width label-and-amount rows inside one card rather than three side-by-side
+  cards. An exact figure such as ₹1,24,500.00 does not fit a third of a phone's width, and shortening or
+  truncating a household's own total is not acceptable; the rows also survive a large font size.
+- There is no "Others" bucket. Every category with spending in the window is listed, largest first, and each one
+  is tappable: folding a household's own categories into a bucket would hide exactly the entries they are
+  looking for.
+- There is no "View All". The five largest entries of the window are listed in full, and the way to see more of
+  a category is to tap it, which opens the report that lists every one of its entries.
+
+### Known limitations
+
+- Categories are flat: there is no subcategory taxonomy, so the design's "Top Subcategories" panel became the
+  category's own largest entries rather than an invented hierarchy.
+- The ledger records the day a transaction belongs to and not the time of day, so an individual entry cannot be
+  labelled with the hour it was made. It carries its day instead.
+- Reports cover up to a year and end on a calendar month; there is no free-form date range picker, because a
+  report whose first and last day had to be reasoned about separately would be a different feature.
+- Nothing is exported and nothing is backed up yet - see the roadmap.
+
 ## Database and Privacy
 
 The application is designed around local storage without requiring a backend for its core financial features.
@@ -409,7 +488,7 @@ Backup and restore behavior will be implemented and tested as the application ev
 | Task 4 | Recurring schedule engine, list, form and details | Completed |
 | Task 5 | Milk tracking and rental income management | Planned |
 | Task 6 | Reminders and local notifications | Planned |
-| Task 7 | Reports, export, and backup/restore | Planned |
+| Task 7 | Reports, export, and backup/restore | In progress - the Reports tab and its category drill-down are implemented and tested; export and backup/restore are planned |
 | Task 8 | Comprehensive testing and release preparation | Planned |
 
 Statuses should be updated when each task has been implemented and verified.
@@ -428,6 +507,10 @@ Testing will cover:
 - Recurring schedule generation.
 - Date-range filtering.
 - Monthly income, expenses, and balances.
+- Report aggregation: that income and expenses are summed apart, that a window is inclusive at both ends and
+  excludes the days either side of it, that category breakdowns and their percentages are sized against the
+  period's own spending, that a quiet day or category is absent rather than a zero, that daily rows add up to the
+  summary above them, and that a generated-but-unpaid recurring occurrence reaches no report figure.
 - Backup and restore integrity.
 - Navigation and UI regression behavior.
 

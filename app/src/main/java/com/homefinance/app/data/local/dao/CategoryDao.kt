@@ -68,6 +68,21 @@ interface CategoryDao {
     @Query("SELECT * FROM categories ORDER BY is_active DESC, name COLLATE NOCASE ASC")
     fun observeAll(): Flow<List<CategoryEntity>>
 
+    /**
+     * Observes the single category with [id], or emits `null` when there is no such category.
+     *
+     * A `Flow` rather than a one-shot read because a screen can be *about* one category while the
+     * household renames or retires it elsewhere: Room re-runs this and the heading changes with it,
+     * instead of the screen going on showing the name the category had when it was opened.
+     *
+     * `null` is a value here, not an error. Every transaction references a category that cannot be
+     * deleted (see [CategoryEntity]'s deletion policy), so a missing one means a caller asked about
+     * an id that has never existed - which the screen answers with a sentence rather than with a
+     * failure.
+     */
+    @Query("SELECT * FROM categories WHERE id = :id")
+    fun observeById(id: Long): Flow<CategoryEntity?>
+
     /** Observes the categories that belong to [type], active ones first. */
     @Query(
         "SELECT * FROM categories WHERE type = :type " +

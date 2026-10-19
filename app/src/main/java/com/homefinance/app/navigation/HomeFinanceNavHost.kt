@@ -25,10 +25,14 @@ import com.homefinance.app.feature.recurring.RecurringDetailScreen
 import com.homefinance.app.feature.recurring.RecurringFormViewModel
 import com.homefinance.app.feature.recurring.RecurringOccurrencesScreen
 import com.homefinance.app.feature.recurring.RecurringScreen
+import com.homefinance.app.feature.reports.CategoryReportScreen
+import com.homefinance.app.feature.reports.ReportPeriod
+import com.homefinance.app.feature.reports.ReportRange
 import com.homefinance.app.feature.reports.ReportsScreen
 import com.homefinance.app.feature.settings.SettingsScreen
 import com.homefinance.app.feature.transactiondetail.TransactionDetailScreen
 import com.homefinance.app.feature.transactions.TransactionsScreen
+import java.time.YearMonth
 
 /**
  * Maps the centralised routes to their screens.
@@ -73,7 +77,36 @@ fun HomeFinanceNavHost(
             )
         }
         composable<ReportsRoute> {
-            ReportsScreen()
+            ReportsScreen(
+                // A row of the breakdown opens that category's own report, carrying the window the
+                // household is looking at so the figure they tapped is the figure they land on.
+                onOpenCategory = { period, categoryId ->
+                    navController.navigate(
+                        CategoryReportRoute(
+                            categoryId = categoryId,
+                            rangeMonths = period.range.months,
+                            endYear = period.endMonth.year,
+                            endMonth = period.endMonth.monthValue,
+                        ),
+                    )
+                },
+                // The biggest entries are ordinary entries, so they open the ledger's own details
+                // screen rather than a second, read-only copy of it.
+                onOpenTransaction = { id -> navController.navigate(TransactionDetailRoute(id)) },
+            )
+        }
+        composable<CategoryReportRoute> { entry ->
+            val route = entry.toRoute<CategoryReportRoute>()
+
+            CategoryReportScreen(
+                categoryId = route.categoryId,
+                period = ReportPeriod(
+                    endMonth = YearMonth.of(route.endYear, route.endMonth),
+                    range = ReportRange.fromMonths(route.rangeMonths),
+                ),
+                onBack = { navController.navigateUp() },
+                onOpenTransaction = { id -> navController.navigate(TransactionDetailRoute(id)) },
+            )
         }
         composable<SettingsRoute> {
             SettingsScreen(onBack = { navController.navigateUp() })

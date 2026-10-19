@@ -6,6 +6,9 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.homefinance.app.data.local.entity.TransactionEntity
+import com.homefinance.app.data.local.relation.CategoryTotal
+import com.homefinance.app.data.local.relation.DailyTotal
+import com.homefinance.app.data.local.relation.TransactionTotals
 import com.homefinance.app.data.local.relation.TransactionWithCategory
 import com.homefinance.app.data.model.TransactionType
 import java.time.LocalDate
@@ -22,8 +25,22 @@ import kotlinx.coroutines.flow.Flow
  * order makes a list appear to jump around for no reason. The `id` tie-break sorts same-day
  * entries newest-recorded-first, which is stable forever because ids are never reused.
  *
- * Nothing here totals money. Monthly summaries are a later task; keeping them out means this
- * layer can be tested without agreeing on what a "month" means yet.
+ * ### Reporting reads
+ *
+ * The aggregate reads at the bottom of this interface are what the Reports screen is built from.
+ * They are still just statements - a sum, a grouped sum, a daily sum - and they deliberately take
+ * their period as a pair of [LocalDate] bounds rather than as a `YearMonth` or a "month": this layer
+ * does not know what a month, a week or a report is, and the folding of days into the buckets a
+ * chart draws happens in Kotlin, where [LocalDate] arithmetic is already the single definition of
+ * every calendar rule in the app.
+ *
+ * Money never leaves these queries as anything but an exact `Long` count of paise, summed by SQLite
+ * over `INTEGER` columns. Nothing is loaded and totalled in the UI layer: each report figure is one
+ * number the database computed.
+ *
+ * Only `transactions` is read. A recurring schedule's pending occurrence is an expectation in
+ * another table and cannot appear in a total; a paid one appears exactly once, as the ordinary
+ * entry that recording it wrote.
  */
 @Dao
 interface TransactionDao {
@@ -158,4 +175,181 @@ interface TransactionDao {
      */
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteById(id: Long): Int
+
+    // ------------------------------------------------------------------ reporting
+
+    /**
+     * What the period [from] to [to] adds up to, in one row: each direction's total and its count.
+     *
+     * ### One row, always
+     *
+     * `SUM` over no rows is `NULL`, so every sum is wrapped in `COALESCE(..., 0)`: an empty period
+     * answers with four zeroes rather than with no row at all, which is what lets the report treat
+     * "nothing happened" as a successful read of nothing rather than as a missing answer.
+     *
+     * ### One statement, so the four figures agree
+     *
+     * The two totals and the two counts are computed by the same scan of the same rows. Reading them
+     * as four queries would let a write land between them, and a report that said "₹85,500.00 across
+     * 28 transactions" where the two numbers came from two different states of the table would be
+     * wrong in the one way a financial screen must never be wrong.
+     *
+     * The direction is compared against the enum's stored text - `'INCOME'` / `'EXPENSE'`, see
+     * [com.homefinance.app.data.local.converter.HomeFinanceTypeConverters] - and the amount is only
+     * selected when the row is of that direction, so a total can never pick up the other one.
+     */
+    @Query(
+        """
+        SELECT COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount_paise ELSE 0 END), 0)
+                   AS income_paise,
+               COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount_paise ELSE 0 END), 0)
+                   AS expense_paise,
+               COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN 1 ELSE 0 END), 0)
+                   AS income_count,
+               COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN 1 ELSE 0 END), 0)
+                   AS expense_count
+        FROM transactions AS t
+        WHERE t.transaction_date BETWEEN :from AND :to
+        """,
+    )
+    fun observeTotals(from: LocalDate, to: LocalDate): Flow<TransactionTotals>
+
+    /**
+     * The period's [type] entries grouped by category, largest total first.
+     *
+     * This is what both breakdown sections of the report are drawn from: the expense breakdown asks
+     * for `EXPENSE` and the income breakdown for `INCOME`, and each group carries the category's own
+     * name and stored mark so a row can be drawn - and tapped - without a second read.
+     *
+     * `ORDER BY total_paise DESC` is the ordering the sections are read in, and it is decided here
+     * rather than in the UI for the reason every other order in this file is: the database can see
+     * every group at once. `name` breaks ties, so two categories that happen to total the same
+     * amount cannot swap places between two reads of unchanged data.
+     *
+     * A category with no rows in the period is simply absent - there is nothing to show for it -
+     * and the empty period answers with an empty list rather than with a fabricated row.
+     */
+    @Query(
+        """
+        SELECT c.id                AS category_id,
+               c.name              AS category_name,
+               c.icon_key          AS category_icon_key,
+               SUM(t.amount_paise) AS total_paise,
+               COUNT(*)            AS transaction_count
+        FROM transactions AS t
+        INNER JOIN categories AS c ON c.id = t.category_id
+        WHERE t.type = :type
+          AND t.transaction_date BETWEEN :from AND :to
+        GROUP BY c.id
+        ORDER BY total_paise DESC, c.name COLLATE NOCASE ASC
+        """,
+    )
+    fun observeCategoryTotals(
+        type: TransactionType,
+        from: LocalDate,
+        to: LocalDate,
+    ): Flow<List<CategoryTotal>>
+
+    /**
+     * One row per calendar day that has any entry in the period, oldest day first.
+     *
+     * The finest grain the report's charts need; the report folds these days into the weeks or months
+     * a bar is drawn for - see [DailyTotal] for why that folding is not done here.
+     *
+     * A day with nothing recorded is absent rather than present as a zero. Days are a *continuous*
+     * series and an absent one is filled in by the caller that knows which days the period contains,
+     * so a period of thirty days always draws thirty bars and a month with a quiet week still shows
+     * that week as flat rather than skipping it. Storing zeroes here would put the two facts - "no
+     * row" and "a row worth nothing" - into the same shape for no gain.
+     */
+    @Query(
+        """
+        SELECT t.transaction_date AS day,
+               COALESCE(SUM(CASE WHEN t.type = 'INCOME' THEN t.amount_paise ELSE 0 END), 0)
+                   AS income_paise,
+               COALESCE(SUM(CASE WHEN t.type = 'EXPENSE' THEN t.amount_paise ELSE 0 END), 0)
+                   AS expense_paise
+        FROM transactions AS t
+        WHERE t.transaction_date BETWEEN :from AND :to
+        GROUP BY t.transaction_date
+        ORDER BY t.transaction_date ASC
+        """,
+    )
+    fun observeDailyTotals(from: LocalDate, to: LocalDate): Flow<List<DailyTotal>>
+
+    /**
+     * The period's [categoryId] entries, newest first, each carrying its category's name and mark.
+     *
+     * The category's own report reads this to list what the figure above it is made of. It is a
+     * *listing*, not an aggregate, for the same reason the ledger is: the rows themselves are what
+     * the household is looking at.
+     *
+     * The filter is the category alone, and it needs no direction: a category belongs to exactly one
+     * direction, and every transaction filed under it is of that direction.
+     */
+    @Query(
+        """
+        SELECT t.id                   AS id,
+               t.type                 AS type,
+               t.amount_paise         AS amount_paise,
+               t.category_id          AS category_id,
+               t.description          AS description,
+               t.notes                AS notes,
+               t.quantity_thousandths AS quantity_thousandths,
+               t.rate_paise           AS rate_paise,
+               t.transaction_date     AS transaction_date,
+               t.created_at           AS created_at,
+               t.updated_at           AS updated_at,
+               c.name                 AS category_name,
+               c.icon_key             AS category_icon_key
+        FROM transactions AS t
+        INNER JOIN categories AS c ON c.id = t.category_id
+        WHERE t.category_id = :categoryId
+          AND t.transaction_date BETWEEN :from AND :to
+        ORDER BY t.transaction_date DESC, t.id DESC
+        """,
+    )
+    fun observeForCategoryInDateRange(
+        categoryId: Long,
+        from: LocalDate,
+        to: LocalDate,
+    ): Flow<List<TransactionWithCategory>>
+
+    /**
+     * The largest entries in the period, biggest first - the report's "biggest movements" list.
+     *
+     * `LIMIT` is applied by the database, so a period holding thousands of entries still answers
+     * with [limit] rows rather than with all of them. `id DESC` breaks ties, so two entries worth the
+     * same amount keep a stable order between reads instead of swapping places.
+     *
+     * Only `INCOME` and `EXPENSE` rows exist to be selected, so the list needs no direction of its
+     * own: the row it draws carries its own type, and the section shows both.
+     */
+    @Query(
+        """
+        SELECT t.id                   AS id,
+               t.type                 AS type,
+               t.amount_paise         AS amount_paise,
+               t.category_id          AS category_id,
+               t.description          AS description,
+               t.notes                AS notes,
+               t.quantity_thousandths AS quantity_thousandths,
+               t.rate_paise           AS rate_paise,
+               t.transaction_date     AS transaction_date,
+               t.created_at           AS created_at,
+               t.updated_at           AS updated_at,
+               c.name                 AS category_name,
+               c.icon_key             AS category_icon_key
+        FROM transactions AS t
+        INNER JOIN categories AS c ON c.id = t.category_id
+        WHERE t.transaction_date BETWEEN :from AND :to
+        ORDER BY t.amount_paise DESC, t.id DESC
+        LIMIT :limit
+        """,
+    )
+    fun observeLargestInDateRange(
+        from: LocalDate,
+        to: LocalDate,
+        limit: Int,
+    ): Flow<List<TransactionWithCategory>>
 }

@@ -8,6 +8,7 @@ import com.homefinance.app.data.repository.CategoryRepository
 import com.homefinance.app.data.repository.CategorySeeder
 import com.homefinance.app.data.repository.RecurrenceGenerator
 import com.homefinance.app.data.repository.RecurringRepository
+import com.homefinance.app.data.repository.ReportRepository
 import com.homefinance.app.data.repository.TransactionRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +40,19 @@ class HomeFinanceApp : Application() {
 
     val transactionRepository: TransactionRepository by lazy {
         TransactionRepository(
+            transactionDao = database.transactionDao(),
+            categoryDao = database.categoryDao(),
+        )
+    }
+
+    /**
+     * Read-only reporting over the same ledger, for the Reports screen.
+     *
+     * It wraps the transaction DAO's aggregate reads and has no write method of any kind: a report is
+     * a picture of money that has already moved, and nothing on that screen is allowed to move any.
+     */
+    val reportRepository: ReportRepository by lazy {
+        ReportRepository(
             transactionDao = database.transactionDao(),
             categoryDao = database.categoryDao(),
         )

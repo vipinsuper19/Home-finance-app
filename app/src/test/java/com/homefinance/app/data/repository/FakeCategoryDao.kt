@@ -4,8 +4,10 @@ import com.homefinance.app.data.local.dao.CategoryDao
 import com.homefinance.app.data.local.entity.CategoryEntity
 import com.homefinance.app.data.model.TransactionType
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 
 /**
  * In-memory [CategoryDao] for JVM tests.
@@ -46,10 +48,20 @@ class FakeCategoryDao(initial: List<CategoryEntity> = emptyList()) : CategoryDao
      */
     var failure: Throwable? = null
 
+    /**
+     * A counter every write bumps, which only [observeById] observes.
+     *
+     * The category report's heading is read from this row, so a rename has to reach it - the same
+     * invalidation Room performs when the `categories` table is written. The other two observes stay
+     * on [flowOf], so nothing a test already relies on changes shape.
+     */
+    private val revision = MutableStateFlow(0)
+
     override suspend fun insert(category: CategoryEntity): Long {
         val id = if (category.id != 0L) category.id else nextId++
         rows[id] = category.copy(id = id)
         inserted += category
+        revision.value += 1
         return id
     }
 
@@ -72,12 +84,14 @@ class FakeCategoryDao(initial: List<CategoryEntity> = emptyList()) : CategoryDao
                 val id = if (category.id != 0L) category.id else nextId++
                 rows[id] = category.copy(id = id)
                 inserted += category
+                revision.value += 1
                 id
             }
         }
 
     override suspend fun update(category: CategoryEntity) {
         rows[category.id] = category
+        revision.value += 1
     }
 
     override suspend fun getById(id: Long): CategoryEntity? = rows[id]
@@ -93,7 +107,21 @@ class FakeCategoryDao(initial: List<CategoryEntity> = emptyList()) : CategoryDao
     }
 
     override suspend fun deactivate(id: Long) {
-        rows[id]?.let { rows[id] = it.copy(isActive = false) }
+        rows[id]?.let {
+            rows[id] = it.copy(isActive = false)
+            revision.value += 1
+        }
+    }
+
+    /**
+     * One category by id, so a report can name what it is about.
+     *
+     * Re-read on every write like the real query rather than answered once, because a category
+     * renamed while its report is open has to reach the heading on screen.
+     */
+    override fun observeById(id: Long): Flow<CategoryEntity?> = revision.map {
+        failure?.let { throw it }
+        rows[id]
     }
 
     private companion object {

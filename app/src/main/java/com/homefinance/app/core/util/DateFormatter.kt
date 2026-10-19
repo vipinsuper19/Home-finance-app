@@ -19,6 +19,9 @@ private const val TIMESTAMP_PATTERN = "d MMM yyyy, h:mm a"
 /** The abbreviated month name alone - for example `Oct`. */
 private const val MONTH_NAME_PATTERN = "MMM"
 
+/** Day then abbreviated month, with no year - for example `1 Nov`. */
+private const val DAY_MONTH_PATTERN = "d MMM"
+
 /** The weekday alone - for example `Thursday`. */
 private const val WEEKDAY_PATTERN = "EEEE"
 
@@ -70,6 +73,17 @@ object DateFormatter {
      */
     fun formatShortMonth(date: LocalDate, locale: Locale = Locale.getDefault()): String =
         DateTimeFormatter.ofPattern(MONTH_NAME_PATTERN, locale).format(date)
+
+    /**
+     * Formats the day and abbreviated month, with no year - for example `1 Nov`.
+     *
+     * For the label under one bar of a chart, where the year is already stated by the heading above
+     * and printing it again under every bar would be the same fact a dozen times. Day-first and
+     * month-by-name, for exactly the reasons [format] gives: `11/1` is unambiguous only to somebody
+     * who already knows the answer.
+     */
+    fun formatDayMonth(date: LocalDate, locale: Locale = Locale.getDefault()): String =
+        DateTimeFormatter.ofPattern(DAY_MONTH_PATTERN, locale).format(date)
 
     /**
      * Formats the day of the week a date falls on - for example `Thursday`.

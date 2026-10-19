@@ -22,6 +22,23 @@ data object RecurringRoute
 @Serializable
 data object ReportsRoute
 
+/**
+ * One category's own report, opened from a row of the breakdown on the Reports tab.
+ *
+ * The category travels as its id, and the window as its length in months plus the month it ends at.
+ * Primitive arguments are what a type-safe route can carry, and carrying the window is what makes the
+ * drill-down open on the period the household was already reading: a screen that opened on "this
+ * month" instead would show a different total from the row that was tapped, with nothing on screen to
+ * explain why.
+ */
+@Serializable
+data class CategoryReportRoute(
+    val categoryId: Long,
+    val rangeMonths: Int,
+    val endYear: Int,
+    val endMonth: Int,
+)
+
 // Detail destination opened from the Home toolbar.
 @Serializable
 data object SettingsRoute

@@ -82,6 +82,11 @@ private fun NavDestination?.isOn(destination: TopLevelDestination): Boolean =
                     navDestination.hasRoute<AddRecurringRoute>() ||
                     navDestination.hasRoute<EditRecurringRoute>() ||
                     navDestination.hasRoute<RecurringCategoryPickerRoute>()
-            TopLevelDestination.Reports -> navDestination.hasRoute<ReportsRoute>()
+            TopLevelDestination.Reports ->
+                // A category's own report is reached from the breakdown on this tab, and it keeps the
+                // bar - the design draws it there, and the household is still reading the report they
+                // came from rather than working through a separate task. Naming this tab is what keeps
+                // Reports highlighted while the drill-down is on screen.
+                navDestination.hasRoute<ReportsRoute>() || navDestination.hasRoute<CategoryReportRoute>()
         }
     } == true

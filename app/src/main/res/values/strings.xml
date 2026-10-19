@@ -340,8 +340,89 @@
     <string name="recurring_interval_error_too_small">The interval must be at least 1</string>
     <string name="recurring_interval_error_too_large">That interval is larger than this app can store</string>
 
+    <!-- Reports: the period selector -->
+    <string name="reports_range_label">Report period</string>
+    <string name="reports_range_month">This Month</string>
+    <string name="reports_range_three_months">3 Months</string>
+    <string name="reports_range_six_months">6 Months</string>
+    <string name="reports_range_year">1 Year</string>
+    <string name="reports_period_previous">Previous month</string>
+    <string name="reports_period_next">Next month</string>
+    <!-- Punctuation around two month names, e.g. "Sep – Nov 2026". -->
+    <string name="reports_period_range_same_year">%1$s – %2$s %3$d</string>
+    <!-- The same, for a window that crosses a year boundary: "Dec 2025 – Feb 2026". -->
+    <string name="reports_period_range_cross_year">%1$s %2$d – %3$s %4$d</string>
+    <string name="reports_current_month_note">This month is still running</string>
+
+    <!-- Reports: the summary -->
+    <string name="reports_summary_income">Income</string>
+    <string name="reports_summary_expense">Expenses</string>
+    <string name="reports_summary_net">Net Cash Flow</string>
+    <plurals name="reports_summary_count">
+        <item quantity="one">%d transaction</item>
+        <item quantity="other">%d transactions</item>
+    </plurals>
+    <string name="reports_comparison_up">↑ %1$d%% %2$s</string>
+    <string name="reports_comparison_down">↓ %1$d%% %2$s</string>
+    <string name="reports_comparison_flat">No change %1$s</string>
+    <string name="reports_comparison_vs_month">vs %1$s</string>
+    <plurals name="reports_comparison_vs_months">
+        <item quantity="one">vs the previous month</item>
+        <item quantity="other">vs the previous %d months</item>
+    </plurals>
+    <string name="reports_savings_rate">Savings rate %1$d%% of income</string>
+    <string name="reports_savings_rate_negative">Spent %1$d%% more than came in</string>
+
+    <!-- Reports: the charts -->
+    <string name="reports_chart_income_vs_expense">Income vs Expense</string>
+    <string name="reports_series_income">Income</string>
+    <string name="reports_series_expense">Expense</string>
+    <string name="reports_series_net">Net</string>
+    <string name="reports_chart_no_activity">Nothing was recorded in this period</string>
+    <string name="reports_chart_column">%1$s: income %2$s, expense %3$s</string>
+    <string name="reports_monthly_trend_title">Monthly Trend (Last %1$d Months)</string>
+
+    <!-- Reports: the category breakdowns -->
+    <string name="reports_expense_breakdown_title">Expenses by Category</string>
+    <string name="reports_income_breakdown_title">Income by Category</string>
+    <string name="reports_breakdown_no_expenses">No expenses were recorded in this period</string>
+    <string name="reports_breakdown_no_income">No income was recorded in this period</string>
+    <string name="reports_breakdown_total_expense">Total expenses</string>
+    <string name="reports_breakdown_total_income">Total income</string>
+
+    <!-- Reports: the largest entries -->
+    <string name="reports_top_amounts_title">Largest Transactions</string>
+
+    <!-- Reports: the states -->
+    <string name="reports_loading">Reading your figures</string>
+    <string name="reports_error_title">Could not load the report</string>
+    <string name="reports_error_message">Something went wrong while reading your transactions. Nothing has been changed.</string>
+    <string name="reports_error_retry">Try again</string>
+    <string name="reports_empty_title">Nothing in this period</string>
+    <string name="reports_empty_message">No income or expenses were recorded in this period. Record one, or step to another month.</string>
+
+    <!-- Reports: one category's own report -->
+    <string name="title_category_details">Category Details</string>
+    <string name="category_report_type_expense">Expense category</string>
+    <string name="category_report_type_income">Income category</string>
+    <string name="category_report_share_expense">%1$d%% of total expenses</string>
+    <string name="category_report_share_income">%1$d%% of total income</string>
+    <string name="category_report_total_spent">Total spent</string>
+    <string name="category_report_total_received">Total received</string>
+    <string name="category_report_transactions">Transactions</string>
+    <string name="category_report_transactions_title">Transactions (%1$d)</string>
+    <string name="category_report_average">Avg. per transaction</string>
+    <string name="category_report_trend_expense">Spending Trend</string>
+    <string name="category_report_trend_income">Income Trend</string>
+    <string name="category_report_top_amounts">Largest Amounts</string>
+    <string name="category_report_empty_message">This category has no entries between %1$s and %2$s.</string>
+    <string name="category_report_missing_title">Category not found</string>
+    <string name="category_report_missing_message">This category is no longer available on this device.</string>
+    <string name="category_report_trend_point">%1$s: %2$s</string>
+    <string name="category_report_entry">%1$s, %2$s</string>
+    <string name="category_report_share_of_category">%1$d%% of this category</string>
+
     <!-- Destinations that are navigable but not implemented yet -->
     <string name="placeholder_coming_soon">Coming soon</string>
-    <string name="reports_placeholder">Monthly summaries and category breakdowns are coming soon.</string>
     <string name="settings_placeholder">Currency, categories, reminders and other preferences are coming soon.</string>
 </resources>
