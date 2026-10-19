@@ -47,7 +47,18 @@ fun HomeFinanceNavHost(
         modifier = modifier,
     ) {
         composable<HomeRoute> {
-            HomeScreen(onOpenSettings = { navController.navigate(SettingsRoute) })
+            HomeScreen(
+                onOpenSettings = { navController.navigate(SettingsRoute) },
+                // A date on the dashboard opens the schedule it belongs to - the same destination the
+                // recurring tab's own rows open - because that is the screen that states the date and
+                // the amount before anything is recorded against it.
+                onOpenSchedule = { id -> navController.navigate(RecurringDetailRoute(id)) },
+                // "View All", each group's heading and the empty state's invitation all lead to the tab
+                // that lists every schedule, entered the way the bottom bar enters it so the tab keeps
+                // one instance and its own remembered state.
+                onOpenRecurring = { navController.switchTo(TopLevelDestination.Recurring) },
+                onAddSchedule = { navController.navigate(AddRecurringRoute) },
+            )
         }
         composable<TransactionsRoute> {
             TransactionsScreen(

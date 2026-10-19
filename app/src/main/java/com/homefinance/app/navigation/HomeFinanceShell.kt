@@ -84,8 +84,13 @@ internal fun NavDestination?.showsBottomBar(): Boolean = !(this?.hierarchy?.any 
 /**
  * Standard bottom-navigation behaviour: one instance per tab, the back stack is rewound to the
  * start destination, and each tab keeps its own scroll and input state.
+ *
+ * Internal rather than private so the *inside* of a screen can take the household to a tab without
+ * inventing a second way of doing it: Home's recurring section draws what the recurring tab also
+ * lists, and tapping it should land where the bottom bar would have taken them - with that tab's
+ * saved state restored rather than a second copy pushed on top of it.
  */
-private fun NavHostController.switchTo(destination: TopLevelDestination) {
+internal fun NavHostController.switchTo(destination: TopLevelDestination) {
     navigate(destination.route) {
         popUpTo(graph.findStartDestination().id) {
             saveState = true

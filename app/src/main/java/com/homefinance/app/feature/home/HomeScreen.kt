@@ -32,29 +32,67 @@ import com.homefinance.app.core.ui.component.HomeFinanceTopBar
 import com.homefinance.app.core.ui.component.SummaryAmountCard
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
 import com.homefinance.app.core.util.CurrencyFormatter
+import com.homefinance.app.data.model.RecurrenceFrequency
+import com.homefinance.app.data.model.TransactionType
+import com.homefinance.app.feature.recurring.OccurrenceDisplayState
+import java.time.LocalDate
 
 /**
- * Home: the monthly overview. The summary figures are clearly marked as sample data because
- * the storage layer does not exist yet.
+ * Home: the monthly overview, with what is due from the household's recurring schedules underneath it.
+ *
+ * The summary figures are still clearly marked as sample data because they are not read from the
+ * ledger yet, while the recurring section below them is the household's own: what is late, what is due
+ * today, and what is coming, all read from the occurrences the engine has generated.
+ *
+ * ### The dashboard writes nothing
+ *
+ * Nothing here records a payment, and no date on this screen is counted as money that has moved. The
+ * one write Home performs is the same engine run the recurring tab performs when it is opened - it
+ * creates expectations, never transactions, and moves no total. See [HomeViewModel] for why it belongs
+ * here too.
+ *
+ * @param onOpenSettings the toolbar's settings action.
+ * @param onOpenSchedule one recurring date was tapped; the schedule it belongs to is opened, which is
+ *   where that date can actually be settled.
+ * @param onOpenRecurring opens the recurring tab: the section's heading, each group's heading and the
+ *   "view all" action all lead there.
+ * @param onAddSchedule opens the form for a first schedule, offered only when the household has none.
  */
 @Composable
 fun HomeScreen(
     onOpenSettings: () -> Unit,
+    onOpenSchedule: (Long) -> Unit,
+    onOpenRecurring: () -> Unit,
+    onAddSchedule: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: HomeViewModel = viewModel(),
+    viewModel: HomeViewModel = viewModel(factory = HomeViewModel.factory()),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     HomeContent(
         uiState = uiState,
         onOpenSettings = onOpenSettings,
+        onOpenSchedule = onOpenSchedule,
+        onOpenRecurring = onOpenRecurring,
+        onAddSchedule = onAddSchedule,
+        onRetry = viewModel::retry,
         modifier = modifier,
     )
 }
 
+/**
+ * The screen's body, taking its state as a parameter.
+ *
+ * Split out from [HomeScreen] so each state - the recurring section loading, populated, empty, or
+ * failed, over the summary cards - can be rendered and asserted directly.
+ */
 @Composable
-private fun HomeContent(
+internal fun HomeContent(
     uiState: HomeUiState,
     onOpenSettings: () -> Unit,
+    onOpenSchedule: (Long) -> Unit,
+    onOpenRecurring: () -> Unit,
+    onAddSchedule: () -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
@@ -95,7 +133,13 @@ private fun HomeContent(
                     modifier = Modifier.weight(1f),
                 )
             }
-            NextStepsCard()
+            RecurringPaymentsCard(
+                state = uiState.recurring,
+                onOpenRecurring = onOpenRecurring,
+                onOpenSchedule = onOpenSchedule,
+                onAddSchedule = onAddSchedule,
+                onRetry = onRetry,
+            )
         }
     }
 }
@@ -158,33 +202,13 @@ private fun SampleDataBadge(modifier: Modifier = Modifier) {
     }
 }
 
-@Composable
-private fun NextStepsCard(modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.large,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.home_next_steps_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(
-                text = stringResource(R.string.home_next_steps_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
+/**
+ * A preview of the two states worth looking at: a section with something late in it, and the summary
+ * cards above it exactly as production draws them.
+ *
+ * The rows are invented here and nowhere else - a preview is tooling, and the screen itself never
+ * shows a household a bill they do not have.
+ */
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
 private fun HomeContentPreview() {
@@ -194,8 +218,78 @@ private fun HomeContentPreview() {
                 balanceInPaise = PlaceholderData.balanceInPaise,
                 incomeInPaise = PlaceholderData.incomeInPaise,
                 expenseInPaise = PlaceholderData.expenseInPaise,
+                recurring = HomeRecurringUiState.Ready(
+                    overdue = listOf(
+                        previewItem(
+                            occurrenceId = 1L,
+                            scheduleId = 10L,
+                            name = "Electricity bill",
+                            categoryName = "Electricity",
+                            categoryType = TransactionType.EXPENSE,
+                            dueDate = LocalDate.of(2026, 10, 2),
+                            amountPaise = 250_000L,
+                            state = OccurrenceDisplayState.OVERDUE,
+                            daysFromToday = -3L,
+                        ),
+                    ),
+                    dueToday = listOf(
+                        previewItem(
+                            occurrenceId = 2L,
+                            scheduleId = 11L,
+                            name = "Shop rent",
+                            categoryName = "Rent",
+                            categoryType = TransactionType.EXPENSE,
+                            dueDate = LocalDate.of(2026, 10, 5),
+                            amountPaise = 1_500_000L,
+                            state = OccurrenceDisplayState.DUE,
+                            daysFromToday = 0L,
+                        ),
+                    ),
+                    upcoming = listOf(
+                        previewItem(
+                            occurrenceId = 3L,
+                            scheduleId = 12L,
+                            name = "Salary",
+                            categoryName = "Salary",
+                            categoryType = TransactionType.INCOME,
+                            dueDate = LocalDate.of(2026, 11, 1),
+                            amountPaise = 4_500_000L,
+                            state = OccurrenceDisplayState.UPCOMING,
+                            daysFromToday = 27L,
+                        ),
+                    ),
+                ),
             ),
             onOpenSettings = {},
+            onOpenSchedule = {},
+            onOpenRecurring = {},
+            onAddSchedule = {},
+            onRetry = {},
         )
     }
 }
+
+/** One invented row for [HomeContentPreview] only. */
+private fun previewItem(
+    occurrenceId: Long,
+    scheduleId: Long,
+    name: String,
+    categoryName: String,
+    categoryType: TransactionType,
+    dueDate: LocalDate,
+    amountPaise: Long,
+    state: OccurrenceDisplayState,
+    daysFromToday: Long,
+): HomeRecurringItem = HomeRecurringItem(
+    occurrenceId = occurrenceId,
+    scheduleId = scheduleId,
+    scheduleName = name,
+    categoryName = categoryName,
+    categoryType = categoryType,
+    dueDate = dueDate,
+    amountPaise = amountPaise,
+    state = state,
+    daysFromToday = daysFromToday,
+    frequency = RecurrenceFrequency.MONTHLY,
+    intervalCount = 1,
+)

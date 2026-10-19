@@ -3,6 +3,7 @@ package com.homefinance.app.data.repository
 import com.homefinance.app.data.local.dao.RecurringDao
 import com.homefinance.app.data.local.entity.RecurringOccurrenceEntity
 import com.homefinance.app.data.local.entity.RecurringScheduleEntity
+import com.homefinance.app.data.local.relation.OutstandingOccurrence
 import com.homefinance.app.data.local.relation.RecurringOccurrenceDetail
 import com.homefinance.app.data.local.relation.RecurringScheduleWithProgress
 import com.homefinance.app.data.model.RecurringOccurrenceStatus
@@ -216,6 +217,38 @@ class FakeRecurringDao(
         )
     }
 
+    /**
+     * The outstanding dates across every schedule, the way the real query reads them: only `PENDING`
+     * occurrences, whatever state their schedule is in, the joins dropping a row whose schedule or
+     * category is absent, and the whole list ordered by due date.
+     *
+     * A paused or stopped schedule is deliberately not filtered out - its already-generated dates stay
+     * payable, exactly as they do in the real read - so the schedule's state travels with the row.
+     *
+     * The `ORDER BY` is reproduced because the screens draw what they are handed; that the real
+     * statement orders this way is asserted against Room in `RecurringDaoTest`.
+     */
+    override fun observeOutstandingOccurrences(): Flow<List<OutstandingOccurrence>> {
+        readFailure?.let { failure -> return flow { throw failure } }
+
+        return flowOf(
+            occurrences.values
+                .filter { it.status == RecurringOccurrenceStatus.PENDING }
+                .mapNotNull { it.outstanding() }
+                .sortedWith(
+                    compareBy<OutstandingOccurrence> { it.dueDate }
+                        .thenBy { it.scheduleName.lowercase() }
+                        .thenBy { it.id },
+                ),
+        )
+    }
+
+    override fun observeScheduleCount(): Flow<Int> {
+        readFailure?.let { failure -> return flow { throw failure } }
+
+        return flowOf(schedules.size)
+    }
+
     override suspend fun markOccurrencePaid(
         id: Long,
         pending: RecurringOccurrenceStatus,
@@ -308,6 +341,32 @@ class FakeRecurringDao(
             createdAt = createdAt,
             updatedAt = updatedAt,
             scheduleName = schedule.name,
+            categoryId = schedule.categoryId,
+            categoryName = name,
+            categoryType = categoryTypes[schedule.categoryId] ?: TransactionType.EXPENSE,
+            categoryIconKey = categoryIconKeys[schedule.categoryId],
+        )
+    }
+
+    /**
+     * Joins one occurrence to its schedule and that schedule's category the way the outstanding query
+     * does, dropping it when either parent is absent. The schedule's own state is carried rather than
+     * filtered on, because the real query carries it too.
+     */
+    private fun RecurringOccurrenceEntity.outstanding(): OutstandingOccurrence? {
+        val schedule = schedules[scheduleId] ?: return null
+        val name = categoryNames[schedule.categoryId] ?: return null
+
+        return OutstandingOccurrence(
+            id = id,
+            scheduleId = scheduleId,
+            dueDate = dueDate,
+            amountPaise = amountPaise,
+            status = status,
+            scheduleName = schedule.name,
+            scheduleStatus = schedule.status,
+            frequency = schedule.frequency,
+            intervalCount = schedule.intervalCount,
             categoryId = schedule.categoryId,
             categoryName = name,
             categoryType = categoryTypes[schedule.categoryId] ?: TransactionType.EXPENSE,

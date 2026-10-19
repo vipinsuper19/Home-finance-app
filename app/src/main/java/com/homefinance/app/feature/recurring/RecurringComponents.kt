@@ -336,10 +336,15 @@ internal fun ScheduleStatusChip(
  * The overdue reading is also the only one that adds a glyph, for the same reason the list row does:
  * it is the one state that has to be noticed, and it must not depend on the reader telling two
  * container colours apart.
+ *
+ * @param label the words, or `null` for the state's own one-word name. A caller that can say something
+ *   more useful - Home says "3 days overdue" rather than "Overdue" - passes it here rather than
+ *   building a second chip, so the colours and the glyph keep being decided in one place.
  */
 @Composable
 internal fun OccurrenceStateChip(
     state: OccurrenceDisplayState,
+    label: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val settled = state.isSettled()
@@ -383,7 +388,7 @@ internal fun OccurrenceStateChip(
             }
 
             Text(
-                text = stringResource(state.labelRes()),
+                text = label ?: stringResource(state.labelRes()),
                 style = MaterialTheme.typography.labelMedium,
             )
         }

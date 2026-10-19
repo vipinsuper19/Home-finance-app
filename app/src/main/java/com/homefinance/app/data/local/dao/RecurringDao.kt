@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.homefinance.app.data.local.entity.RecurringOccurrenceEntity
 import com.homefinance.app.data.local.entity.RecurringScheduleEntity
+import com.homefinance.app.data.local.relation.OutstandingOccurrence
 import com.homefinance.app.data.local.relation.RecurringOccurrenceDetail
 import com.homefinance.app.data.local.relation.RecurringScheduleWithProgress
 import com.homefinance.app.data.model.RecurringOccurrenceStatus
@@ -267,6 +268,81 @@ interface RecurringDao {
         """,
     )
     fun observeOccurrencesForSchedule(scheduleId: Long): Flow<List<RecurringOccurrenceDetail>>
+
+    /**
+     * Every still-waiting occurrence of every schedule, soonest due date first - the Home dashboard's
+     * "what wants attention" read.
+     *
+     * ### One query, not a walk over the schedules
+     *
+     * Home draws a few dates out of *every* schedule at once, so reading the schedules and then asking
+     * each one for its occurrences would be the N+1 query the other projections exist to avoid. One
+     * join answers the whole section: the date, what was expected of it, the rule it came from, the
+     * schedule it belongs to, that schedule's state and the category it will be filed under.
+     *
+     * ### What is left out, and why
+     *
+     *  - `o.status = 'PENDING'` - a paid or skipped date is finished with. Home shows what can still be
+     *    acted on, and a settled row drawn among the waiting ones would be the screen asking twice for
+     *    the same bill. Nothing is lost by leaving it out: a paid occurrence's own history lives on its
+     *    schedule's details and occurrence screens.
+     *
+     * Nothing else is left out. The schedule's own state is deliberately **not** a filter here: pausing
+     * a schedule stops [com.homefinance.app.data.repository.RecurrenceGenerator] making more dates and
+     * retiring one stops it for good, but neither deletes the dates already generated, and this app
+     * keeps them payable - the details screen says so in as many words ("A household who decided not to
+     * renew a subscription may still owe the final bill"). A date that can still be paid is a date this
+     * read must not hide, or Home would fall silent about a bill the household still owes while the
+     * schedule's own screen went on offering to record it. The state travels with the row instead, so
+     * the section can say *why* a date from a paused or stopped schedule is still there.
+     *
+     * Both `INNER JOIN`s drop nothing in practice - the two foreign keys are non-null and neither
+     * parent is ever deleted - exactly as [observeOccurrencesForSchedule] sets out.
+     *
+     * ### The order is the reading order
+     *
+     * Ascending by due date, because the date that has waited longest is the one that wants attention
+     * first, and Home draws them in the order it read them. `name` and `id` break ties only, so two
+     * reads of unchanged data cannot shuffle two dates that fall on the same day.
+     */
+    @Query(
+        """
+        SELECT o.id             AS id,
+               o.schedule_id    AS schedule_id,
+               o.due_date       AS due_date,
+               o.amount_paise   AS amount_paise,
+               o.status         AS status,
+               s.name           AS schedule_name,
+               s.status         AS schedule_status,
+               s.frequency      AS frequency,
+               s.interval_count AS interval_count,
+               s.category_id    AS category_id,
+               c.name           AS category_name,
+               c.type           AS category_type,
+               c.icon_key       AS category_icon_key
+        FROM recurring_occurrences AS o
+        INNER JOIN recurring_schedules AS s ON s.id = o.schedule_id
+        INNER JOIN categories AS c ON c.id = s.category_id
+        WHERE o.status = 'PENDING'
+        ORDER BY o.due_date ASC, s.name COLLATE NOCASE ASC, o.id ASC
+        """,
+    )
+    fun observeOutstandingOccurrences(): Flow<List<OutstandingOccurrence>>
+
+    /**
+     * How many schedules exist at all, whatever their state.
+     *
+     * Home asks this to tell "this household has never set one up" - which deserves an invitation -
+     * apart from "everything they have set up is settled, paused or stopped", which deserves the truth
+     * rather than a page that looks like a fresh install. A count rather than the rows themselves,
+     * because the question is only whether there is at least one, and a count is one number instead of
+     * every schedule's whole rule.
+     *
+     * `COUNT(*)` over a table with no `WHERE` clause still re-emits when that table changes, which is
+     * what lets the section react to a schedule being added or stopped.
+     */
+    @Query("SELECT COUNT(*) FROM recurring_schedules")
+    fun observeScheduleCount(): Flow<Int>
 
     /**
      * Ties an occurrence to the actual expense it was paid as, and only while it is still pending.

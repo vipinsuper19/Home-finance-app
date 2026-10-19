@@ -34,12 +34,13 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - Recurring schedules for daily, weekly, monthly and yearly rules with a configurable interval, an optional end date, and a monthly/yearly date rule that clamps to the end of a short month without drifting. A schedule's direction is its **category's** own type, so the same feature covers a rent payment and a salary: there is no separate "recurring income" to model, and a schedule cannot disagree with the category it files its payments under.
 - A recurring list filtered by All, Expense or Income, each row showing the category's mark, the schedule's name, its frequency and amount - or its unit price, when the household priced the thing by weight or volume - and the next due date, with an overdue marker that does not rely on colour alone, plus loading, empty, no-matches, error and retry states.
 - A recurring form for creating and editing schedules, reusing the ledger's exact rupee-to-paise parsing and its category picker, offering the same Income/Expense choice as the add-transaction form, and validating the name, amount, unit price, interval, dates and category; the categories on offer are the active ones of the chosen direction, and changing the direction clears a category that no longer belongs to it.
-- Generated recurring occurrences: the Recurring tab is opened, the dates the rule implies up to a bounded planning horizon are created, and a database unique index on (schedule, due date) makes a repeated, interrupted or concurrent run harmless.
+- Generated recurring occurrences: the Recurring tab is opened, the dates the rule implies up to a bounded planning horizon are created, and a database unique index on (schedule, due date) makes a repeated, interrupted or concurrent run harmless. The engine runs when Home is opened as well, because Home is the screen that draws what is due; it creates expectations only, never a ledger entry, so no total moves - "recurring payments due today are not today's spending".
 - A recurring details screen stating the schedule's name, frequency and direction, its expected figure, its status, the next payment with how far off it is, the rule behind it, a paid/upcoming/overdue summary and the newest few payments, with Edit beside the facts it changes and Pause, Resume and Stop in the top bar's overflow menu.
 - Marking a recurring occurrence paid writes exactly one entry in the category's direction through the ordinary transaction path, links it to the occurrence and files it under the schedule's category, inside one database transaction and only if the occurrence is still pending - confirmed from a bottom sheet that states the date, the expected figure, the category and the description the entry will carry and reuses the ledger form's own amount field.
 - Skipping an occurrence, pausing and resuming a schedule, and stopping a schedule for good: none of them write a transaction, none of them delete anything, and pausing then resuming does not back-fill or duplicate dates.
-- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, type conversion, category naming, category mark keys and the list of categories the app ships with, the one-off category seeder, the category mark palette, repository validation, money and quantity input parsing and their edit round trips, date and timestamp formatting, transaction list filtering and grouping, the add, edit and details screen states, the recurrence calculator, the recurring list, form, details and occurrence view models, and the shared occurrence payment and skip state machine.
-- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety through every step to the current schema, the unique category-name index as both an insert and an ignore, the recurring unique index and foreign keys, category seeding including its rollback and its idempotence, the recurring repository and generator including concurrent and failed payments, and the transaction list, add-transaction form, edit-transaction form, category picker, transaction details, recurring list, recurring form, recurring details and occurrence history screens.
+- The Home dashboard's recurring section, read from the household's own occurrences rather than from sample data: what is late, what is due today and what is coming, each group counted and each date showing the schedule's name, the category's mark, how the date comes round, the amount that was expected on *that* date and how far off it is in words ("3 days overdue", "Due in 5 days"). Overdue dates are drawn first and are never trimmed; upcoming dates are previewed five at a time with the heading still stating how many there are in all; a state with nothing to show says "Nothing due today" rather than drawing a blank, a household with no schedules at all is invited to add one, and the section carries its own loading, failure and retry states without taking the rest of the dashboard down with it.
+- Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, the dashboard's classification of a date as overdue, due today or upcoming and its preview limit, type conversion, category naming, category mark keys and the list of categories the app ships with, the one-off category seeder, the category mark palette, repository validation, money and quantity input parsing and their edit round trips, date and timestamp formatting, transaction list filtering and grouping, the add, edit and details screen states, the recurrence calculator, the recurring list, form, details and occurrence view models, and the shared occurrence payment and skip state machine.
+- Instrumented tests against an in-memory Room database for DAO behaviour, migration safety through every step to the current schema, the unique category-name index as both an insert and an ignore, the recurring unique index and foreign keys, the outstanding-occurrence read behind the Home dashboard and its schedule count, category seeding including its rollback and its idempotence, the recurring repository and generator including concurrent and failed payments, and the transaction list, add-transaction form, edit-transaction form, category picker, transaction details, recurring list, recurring form, recurring details, occurrence history and Home dashboard sections.
 - No backend or account registration required for the current architecture.
 
 ### Planned
@@ -274,7 +275,7 @@ an expense against an income category.
 
 ### Generating occurrences
 
-- Occurrences are generated when the Recurring tab is opened. There is no background job and no reminder.
+- Occurrences are generated when the Recurring tab or the Home screen is opened. There is no background job and no reminder.
 - Only the dates the rule implies, up to today plus a **90-day planning horizon**, are created, so the list can
   show what is coming without generating years of dates nobody asked for.
 - A schedule records how far it has been generated, and that progress is written only after the rows are
@@ -303,6 +304,39 @@ an expense against an income category.
   schedule's own category and dated the date the schedule committed to; a control the write would then ignore
   would be worse than no control.
 
+### What the Home dashboard shows
+
+The Home screen's **Recurring Payments** section reads the same occurrences the recurring tab lists, grouped by
+how they stand against today:
+
+- **Overdue** first, and never trimmed. These are the dates that want doing something about, so a preview never
+  decides for the household which of their own bills matters. Being late is said in words - "3 days overdue" -
+  so the reading never depends on telling two container colours apart.
+- **Due Today** next: the dates that fall on today exactly, in the amber a household associates with a bill that
+  has arrived but is not late.
+- **Upcoming** last, soonest first, previewed five at a time. The heading states how many there are **in all**, so
+  a preview of five cannot read as "there are only five" - and nothing is lost by the limit, because every date is
+  on the recurring tab, one tap away.
+
+Each row is one **date**, not one schedule, so a schedule with several dates waiting has a row for each. The
+figure is the occurrence's own - what was expected on *that* day - and the second line says how the date comes
+round ("Monthly (on 5th)", "Every 2 weeks (on Tuesday)"), using the date's own day so a clamped month-end date
+describes itself rather than the anchor it was clamped from.
+
+Only dates that can still be acted on are drawn. A paid or skipped occurrence is absent because it is finished
+with rather than work; nothing else is filtered out. A paused or stopped schedule's waiting dates **are** drawn,
+because pausing stops the engine making more dates rather than cancelling the ones already asked for, and the app
+goes on offering to record them - a household that stopped a subscription may still owe the final bill. Those rows
+say so in their own line ("Monthly (on 5th) · Paused"), so the date reads as the last of a schedule that was
+switched off rather than as a fault. A group with nothing in it is *said* - "Nothing due today", "No upcoming
+recurring items" - rather than left blank; a household that has never set a schedule up is invited to add one; and
+nothing is ever invented to fill the space.
+
+The section is a reading of **expectations**, and it draws its amounts in the ordinary text colour rather than in
+the ledger's green and red, which mean money that has moved. Opening Home runs the same generation run the tab
+runs, and that run writes expectations only: a bill due today is not today's spending, and no figure above the
+section is affected by it.
+
 ### Pausing, resuming and stopping
 
 - **Pausing** stops the schedule generating anything new. Nothing is deleted: the dates already generated stay
@@ -321,7 +355,7 @@ an expense against an income category.
 ### Known limitations
 
 - There are no reminders or notifications - the details screen deliberately does not pretend otherwise - and no
-  background generation, so dates appear when the tab is opened.
+  background generation, so dates appear when Home or the Recurring tab is opened.
 - A payment is posted on the occurrence's due date; there is no way to date it differently, because the entry
   is the payment of *that* date.
 - Occurrences are never deleted, only resolved, and a stopped schedule cannot be restarted.

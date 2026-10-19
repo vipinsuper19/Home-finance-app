@@ -4,6 +4,7 @@ import com.homefinance.app.core.util.RecurrenceCalculator
 import com.homefinance.app.data.local.TransactionRunner
 import com.homefinance.app.data.local.dao.RecurringDao
 import com.homefinance.app.data.local.entity.RecurringScheduleEntity
+import com.homefinance.app.data.local.relation.OutstandingOccurrence
 import com.homefinance.app.data.local.relation.RecurringOccurrenceDetail
 import com.homefinance.app.data.local.relation.RecurringScheduleWithProgress
 import com.homefinance.app.data.model.RecurrenceFrequency
@@ -103,6 +104,21 @@ class RecurringRepository(
     /** One schedule's occurrences, newest first, each carrying the schedule's name and category. */
     fun observeOccurrences(scheduleId: Long): Flow<List<RecurringOccurrenceDetail>> =
         recurringDao.observeOccurrencesForSchedule(scheduleId)
+
+    /**
+     * Every date the household can still act on, across every schedule, soonest first.
+     *
+     * Paid and skipped dates are not included - they are finished with, and see
+     * [RecurringDao.observeOutstandingOccurrences] for why. A paused or stopped schedule's dates *are*,
+     * because pausing and stopping stop generation rather than deleting what was generated, and this
+     * app goes on offering to record those dates. This is what Home draws, and it is a *read*: nothing
+     * here generates, settles or moves a total.
+     */
+    fun observeOutstandingOccurrences(): Flow<List<OutstandingOccurrence>> =
+        recurringDao.observeOutstandingOccurrences()
+
+    /** How many schedules exist at all, whatever their state - see [RecurringDao.observeScheduleCount]. */
+    fun observeScheduleCount(): Flow<Int> = recurringDao.observeScheduleCount()
 
     /**
      * One occurrence as it stands, for the rare caller that needs a one-shot read.

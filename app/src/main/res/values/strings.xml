@@ -18,8 +18,27 @@
     <string name="home_income_label">Income</string>
     <string name="home_expense_label">Expenses</string>
     <string name="home_sample_badge">Sample data</string>
-    <string name="home_next_steps_title">Coming next</string>
-    <string name="home_next_steps_body">Monthly reports and category breakdowns.</string>
+
+    <!-- Home screen: the recurring section -->
+    <string name="home_recurring_title">Recurring Payments</string>
+    <string name="home_recurring_view_all">View All</string>
+    <string name="home_recurring_group_overdue">Overdue (%1$d)</string>
+    <string name="home_recurring_group_due_today">Due Today (%1$d)</string>
+    <string name="home_recurring_group_upcoming">Upcoming (%1$d)</string>
+    <!-- The rule a date came from, with the day it falls on: "Monthly (on 5th)". -->
+    <string name="home_recurring_rule_with_anchor">%1$s (on %2$s)</string>
+    <!--
+      A date can outlive the schedule that made it: pausing or stopping a schedule stops it generating
+      more dates, but the dates it already generated stay payable, so Home still draws them. This is how
+      a row says so - "Monthly (on 5th) · Paused" - rather than leaving the household to wonder why a
+      bill from a schedule they switched off is still asking for attention.
+    -->
+    <string name="home_recurring_rule_with_status">%1$s · %2$s</string>
+    <string name="home_recurring_nothing_due_today">Nothing due today</string>
+    <string name="home_recurring_no_upcoming">No upcoming recurring items</string>
+    <string name="home_recurring_empty_title">No recurring payments yet</string>
+    <string name="home_recurring_empty_message">Add rent, a bill or your salary, and it will appear here when it is due.</string>
+    <string name="home_recurring_error">Recurring payments could not be loaded.</string>
 
     <!-- Transactions screen -->
     <string name="transactions_empty_title">No transactions yet</string>
