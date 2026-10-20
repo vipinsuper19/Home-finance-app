@@ -2,13 +2,19 @@ package com.homefinance.app
 
 import android.app.Application
 import android.util.Log
+import com.homefinance.app.core.util.AndroidDocumentStore
+import com.homefinance.app.core.util.DocumentStore
 import com.homefinance.app.data.local.HomeFinanceDatabase
 import com.homefinance.app.data.local.RoomTransactionRunner
+import com.homefinance.app.data.repository.AppDataRepository
+import com.homefinance.app.data.repository.BackupRepository
 import com.homefinance.app.data.repository.CategoryRepository
 import com.homefinance.app.data.repository.CategorySeeder
+import com.homefinance.app.data.repository.DataTransferRepository
 import com.homefinance.app.data.repository.RecurrenceGenerator
 import com.homefinance.app.data.repository.RecurringRepository
 import com.homefinance.app.data.repository.ReportRepository
+import com.homefinance.app.data.repository.SettingsRepository
 import com.homefinance.app.data.repository.TransactionRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -83,6 +89,55 @@ class HomeFinanceApp : Application() {
 
     /** The one transaction scope on the one database; see [RoomTransactionRunner]. */
     private val transactionRunner: RoomTransactionRunner by lazy { RoomTransactionRunner(database) }
+
+    /**
+     * The household's preferences, over the existing `app_setting` table.
+     *
+     * No second storage mechanism was added: this table already held the "categories were seeded"
+     * flag, so it is the one place a preference can live and the one place a clear or a restore has
+     * to know about.
+     */
+    val settingsRepository: SettingsRepository by lazy {
+        SettingsRepository(database.appSettingDao())
+    }
+
+    /** Creates and reads versioned backup files, and replaces the database from one. */
+    val backupRepository: BackupRepository by lazy {
+        BackupRepository(
+            categoryDao = database.categoryDao(),
+            transactionDao = database.transactionDao(),
+            recurringDao = database.recurringDao(),
+            appSettingDao = database.appSettingDao(),
+            transactionRunner = transactionRunner,
+        )
+    }
+
+    /** Exports the ledger as CSV and validates an import back into it. */
+    val dataTransferRepository: DataTransferRepository by lazy {
+        DataTransferRepository(
+            transactionDao = database.transactionDao(),
+            categoryDao = database.categoryDao(),
+            transactionRunner = transactionRunner,
+        )
+    }
+
+    /** Deletes every row for "Clear app data", through the DAOs rather than around the database. */
+    val appDataRepository: AppDataRepository by lazy {
+        AppDataRepository(
+            categoryDao = database.categoryDao(),
+            transactionDao = database.transactionDao(),
+            recurringDao = database.recurringDao(),
+            appSettingDao = database.appSettingDao(),
+            transactionRunner = transactionRunner,
+        )
+    }
+
+    /**
+     * Reads and writes the one document the household picked through the system file picker.
+     *
+     * The app never chooses a path or asks for a storage permission; see [AndroidDocumentStore].
+     */
+    val documentStore: DocumentStore by lazy { AndroidDocumentStore(contentResolver) }
 
     /**
      * Writes the twelve categories the app ships with, once, on the first start after installation.

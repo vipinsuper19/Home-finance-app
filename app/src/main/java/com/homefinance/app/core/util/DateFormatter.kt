@@ -25,6 +25,30 @@ private const val DAY_MONTH_PATTERN = "d MMM"
 /** The weekday alone - for example `Thursday`. */
 private const val WEEKDAY_PATTERN = "EEEE"
 
+/** The numeric date layout - day first, zero-padded, for example `05/11/2026`. */
+private const val NUMERIC_PATTERN = "dd/MM/yyyy"
+
+/** The numeric month layout, for example `11/2026`. */
+private const val NUMERIC_MONTH_PATTERN = "MM/yyyy"
+
+/** Day and month without a year, in the numeric layout - for example `05/11`. */
+private const val NUMERIC_DAY_MONTH_PATTERN = "dd/MM"
+
+/** The numeric timestamp layout - day first, with a 24-hour clock. */
+private const val NUMERIC_TIMESTAMP_PATTERN = "dd/MM/yyyy, HH:mm"
+
+/** The ISO date layout, for example `2026-11-05`. */
+private const val ISO_PATTERN = "yyyy-MM-dd"
+
+/** The ISO month layout, for example `2026-11`. */
+private const val ISO_MONTH_PATTERN = "yyyy-MM"
+
+/** Month and day without a year, in the ISO layout - for example `11-05`. */
+private const val ISO_DAY_MONTH_PATTERN = "MM-dd"
+
+/** The ISO timestamp layout, with a 24-hour clock. */
+private const val ISO_TIMESTAMP_PATTERN = "yyyy-MM-dd HH:mm"
+
 /**
  * Formats the calendar dates a household reads: the day a transaction's money moved.
  *
@@ -46,11 +70,49 @@ private const val WEEKDAY_PATTERN = "EEEE"
  * whatever the default locale was when it was first touched and then go stale if the household
  * changed the device language; building it is cheap, and there is no shared mutable state to
  * synchronise.
+ *
+ * ### The one piece of shared state: the chosen layout
+ *
+ * The household can choose between three date layouts in Settings ([DateFormatStyle]). Applying
+ * that choice to the whole app through a dozen view models would mean threading the preference
+ * through every read, and one screen left out would print a date in a different layout from the row
+ * above it. Instead the active style is held here, once, and written by the application shell as the
+ * preference changes. Every existing `format(...)` call then honours it without knowing it exists.
+ *
+ * It is a single `@Volatile` reference rather than a `StateFlow` because formatting is synchronous:
+ * a composable asking for a date needs an answer in that frame. The shell writes it before drawing
+ * the content, and a change recomposes the whole tree from the shell downwards, so the next frame
+ * draws every date in the new layout. The style is deliberately process-wide and not persisted
+ * here - persistence lives in the settings table, which is the source of truth across restarts.
  */
 object DateFormatter {
 
+    @Volatile
+    private var activeStyle: DateFormatStyle = DateFormatStyle.DAY_MONTH_YEAR
+
+    /** The layout every call without an explicit [style] currently uses. */
+    val style: DateFormatStyle get() = activeStyle
+
+    /**
+     * Makes [style] the layout every subsequent call uses.
+     *
+     * Called by the application shell when the stored preference changes. It is idempotent, so it is
+     * safe to apply on every recomposition, which is what keeps the process-wide style in step with
+     * the database without a one-shot initialisation race.
+     */
+    fun applyStyle(style: DateFormatStyle) {
+        activeStyle = style
+    }
+
     fun format(date: LocalDate, locale: Locale = Locale.getDefault()): String =
-        DateTimeFormatter.ofPattern(PATTERN, locale).format(date)
+        format(date, activeStyle, locale)
+
+    /** Formats [date] in an explicit [style], for a preview or a test that must not depend on the app's setting. */
+    fun format(
+        date: LocalDate,
+        style: DateFormatStyle,
+        locale: Locale = Locale.getDefault(),
+    ): String = DateTimeFormatter.ofPattern(datePattern(style), locale).format(date)
 
     /**
      * Formats the month a filter is scoped to - for example `Oct 2026`.
@@ -62,7 +124,14 @@ object DateFormatter {
      * already knows the answer.
      */
     fun formatMonth(yearMonth: YearMonth, locale: Locale = Locale.getDefault()): String =
-        DateTimeFormatter.ofPattern(MONTH_PATTERN, locale).format(yearMonth)
+        formatMonth(yearMonth, activeStyle, locale)
+
+    /** Formats [yearMonth] in an explicit [style]. */
+    fun formatMonth(
+        yearMonth: YearMonth,
+        style: DateFormatStyle,
+        locale: Locale = Locale.getDefault(),
+    ): String = DateTimeFormatter.ofPattern(monthPattern(style), locale).format(yearMonth)
 
     /**
      * Formats the abbreviated month a date falls in - for example `Oct`.
@@ -83,7 +152,7 @@ object DateFormatter {
      * who already knows the answer.
      */
     fun formatDayMonth(date: LocalDate, locale: Locale = Locale.getDefault()): String =
-        DateTimeFormatter.ofPattern(DAY_MONTH_PATTERN, locale).format(date)
+        DateTimeFormatter.ofPattern(dayMonthPattern(activeStyle), locale).format(date)
 
     /**
      * Formats the day of the week a date falls on - for example `Thursday`.
@@ -115,6 +184,40 @@ object DateFormatter {
         zone: ZoneId = ZoneId.systemDefault(),
         locale: Locale = Locale.getDefault(),
     ): String =
-        DateTimeFormatter.ofPattern(TIMESTAMP_PATTERN, locale)
+        DateTimeFormatter.ofPattern(timestampPattern(activeStyle), locale)
             .format(instant.atZone(zone))
+
+    /** Formats an audit timestamp in an explicit [style], for a preview or a test. */
+    fun formatTimestamp(
+        instant: Instant,
+        zone: ZoneId = ZoneId.systemDefault(),
+        locale: Locale = Locale.getDefault(),
+        style: DateFormatStyle,
+    ): String =
+        DateTimeFormatter.ofPattern(timestampPattern(style), locale)
+            .format(instant.atZone(zone))
+
+    private fun datePattern(style: DateFormatStyle): String = when (style) {
+        DateFormatStyle.DAY_MONTH_YEAR -> PATTERN
+        DateFormatStyle.DAY_MONTH_NUMERIC -> NUMERIC_PATTERN
+        DateFormatStyle.ISO -> ISO_PATTERN
+    }
+
+    private fun monthPattern(style: DateFormatStyle): String = when (style) {
+        DateFormatStyle.DAY_MONTH_YEAR -> MONTH_PATTERN
+        DateFormatStyle.DAY_MONTH_NUMERIC -> NUMERIC_MONTH_PATTERN
+        DateFormatStyle.ISO -> ISO_MONTH_PATTERN
+    }
+
+    private fun dayMonthPattern(style: DateFormatStyle): String = when (style) {
+        DateFormatStyle.DAY_MONTH_YEAR -> DAY_MONTH_PATTERN
+        DateFormatStyle.DAY_MONTH_NUMERIC -> NUMERIC_DAY_MONTH_PATTERN
+        DateFormatStyle.ISO -> ISO_DAY_MONTH_PATTERN
+    }
+
+    private fun timestampPattern(style: DateFormatStyle): String = when (style) {
+        DateFormatStyle.DAY_MONTH_YEAR -> TIMESTAMP_PATTERN
+        DateFormatStyle.DAY_MONTH_NUMERIC -> NUMERIC_TIMESTAMP_PATTERN
+        DateFormatStyle.ISO -> ISO_TIMESTAMP_PATTERN
+    }
 }

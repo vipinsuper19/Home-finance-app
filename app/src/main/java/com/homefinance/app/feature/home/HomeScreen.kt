@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -117,6 +118,7 @@ internal fun HomeContent(
         ) {
             BalanceCard(
                 balanceInPaise = uiState.balanceInPaise,
+                showBalance = uiState.showBalance,
                 showSampleBadge = uiState.isPlaceholderData,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -147,6 +149,7 @@ internal fun HomeContent(
 @Composable
 private fun BalanceCard(
     balanceInPaise: Long,
+    showBalance: Boolean,
     showSampleBadge: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -176,10 +179,29 @@ private fun BalanceCard(
                     SampleDataBadge()
                 }
             }
-            Text(
-                text = CurrencyFormatter.formatInr(balanceInPaise),
-                style = MaterialTheme.typography.headlineMedium,
-            )
+            if (showBalance) {
+                Text(
+                    text = CurrencyFormatter.formatInr(balanceInPaise),
+                    style = MaterialTheme.typography.headlineMedium,
+                )
+            } else {
+                // The amount is not composed at all when the preference is off: a masked string keeps
+                // the card's height and the household's privacy, and a screen reader is told why the
+                // figure is missing rather than reading a row of bullets.
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.home_balance_hidden_value),
+                        style = MaterialTheme.typography.headlineMedium,
+                    )
+                    Icon(
+                        imageVector = Icons.Outlined.VisibilityOff,
+                        contentDescription = stringResource(R.string.home_balance_hidden),
+                    )
+                }
+            }
         }
     }
 }

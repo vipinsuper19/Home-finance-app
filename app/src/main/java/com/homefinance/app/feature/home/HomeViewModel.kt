@@ -20,7 +20,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -75,6 +78,16 @@ import kotlinx.coroutines.launch
 class HomeViewModel(
     private val recurring: RecurringRepository,
     private val today: LocalDate = LocalDate.now(),
+    /**
+     * Whether the balance amount may be drawn.
+     *
+     * It arrives as a `Flow` rather than a repository so the screen depends only on the one boolean
+     * it needs, and a test can pin it without a database. It defaults to `true`, which is the
+     * behaviour before Settings existed, so the existing factory and tests keep their meaning. A
+     * failure reading the preference falls back to `true` rather than hiding the household's own
+     * balance because a setting row could not be read.
+     */
+    private val showBalance: Flow<Boolean> = flowOf(true),
 ) : ViewModel() {
 
     private val retryRequests = MutableStateFlow(0)
@@ -86,13 +99,19 @@ class HomeViewModel(
         combine(
             retryRequests.flatMapLatest { observeRecurring() },
             generationFailed,
-        ) { read, behind -> read.toUiState(behind) }
+            // A failed settings read shows the balance rather than hiding it: the household asked for
+            // a dashboard, and a broken preference row must not look like a private-mode switch.
+            showBalance.catch { emit(true) },
+        ) { read, behind, balanceVisible -> read.toUiState(behind, balanceVisible) }
             .stateIn(
                 scope = viewModelScope,
                 // Keeping the subscription alive briefly means coming back to Home - from a bill's
                 // details, or from another tab - does not throw the section away and show a spinner.
                 started = SharingStarted.WhileSubscribed(SUBSCRIPTION_TIMEOUT_MILLIS),
-                initialValue = RecurringRead.Loading.toUiState(generationFailed = false),
+                initialValue = RecurringRead.Loading.toUiState(
+                    generationFailed = false,
+                    showBalance = true,
+                ),
             )
 
     init {
@@ -144,11 +163,15 @@ class HomeViewModel(
             .catch { failure -> emit(RecurringRead.Failed(failure)) }
     }
 
-    private fun RecurringRead.toUiState(generationFailed: Boolean): HomeUiState = HomeUiState(
+    private fun RecurringRead.toUiState(
+        generationFailed: Boolean,
+        showBalance: Boolean,
+    ): HomeUiState = HomeUiState(
         balanceInPaise = PlaceholderData.balanceInPaise,
         incomeInPaise = PlaceholderData.incomeInPaise,
         expenseInPaise = PlaceholderData.expenseInPaise,
         isPlaceholderData = true,
+        showBalance = showBalance,
         recurring = when (this) {
             RecurringRead.Loading -> HomeRecurringUiState.Loading
             is RecurringRead.Failed -> HomeRecurringUiState.Failed(cause)
@@ -216,8 +239,13 @@ class HomeViewModel(
                     this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY],
                 ) { "HomeViewModel needs the Application to reach the repository" }
 
-                HomeViewModel((application as HomeFinanceApp).recurringRepository)
-            }
+                val app = application as HomeFinanceApp
+                HomeViewModel(
+                    recurring = app.recurringRepository,
+                    showBalance = app.settingsRepository.preferences
+                        .map { it.showBalanceOnHome }
+                        .distinctUntilChanged(),
+                )            }
         }
 
         /**

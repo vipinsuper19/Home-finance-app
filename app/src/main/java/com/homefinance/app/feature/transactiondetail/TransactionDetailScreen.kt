@@ -473,6 +473,8 @@ private fun DeleteConfirmation(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptic = com.homefinance.app.core.ui.component.rememberConfirmationHaptic()
+
     AlertDialog(
         onDismissRequest = { if (!isDeleting) onDismiss() },
         modifier = modifier,
@@ -490,7 +492,10 @@ private fun DeleteConfirmation(
         },
         confirmButton = {
             TextButton(
-                onClick = onConfirm,
+                onClick = {
+                    haptic()
+                    onConfirm()
+                },
                 enabled = !isDeleting,
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = MaterialTheme.colorScheme.error,

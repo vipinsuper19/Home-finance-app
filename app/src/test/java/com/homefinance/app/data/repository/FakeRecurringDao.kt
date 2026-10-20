@@ -192,7 +192,10 @@ class FakeRecurringDao(
             if (alreadyThere) {
                 IGNORED_ROW
             } else {
-                val id = nextOccurrenceId++
+                // A row that carries an id keeps it: a restore writes the ids the backup holds, so
+                // that an occurrence still points at the schedule and payment it described.
+                val id = if (row.id != 0L) row.id else nextOccurrenceId
+                nextOccurrenceId = maxOf(nextOccurrenceId, id + 1L)
                 this.occurrences[id] = row.copy(id = id)
                 id
             }
@@ -280,8 +283,26 @@ class FakeRecurringDao(
         return 1
     }
 
-    private inline fun transition(
-        id: Long,
+    /** Every schedule, ids ascending, for a backup. */
+    override suspend fun getAllSchedules(): List<RecurringScheduleEntity> =
+        schedules.values.sortedBy { it.id }
+
+    /** Every occurrence, ids ascending, for a backup. */
+    override suspend fun getAllOccurrences(): List<RecurringOccurrenceEntity> =
+        occurrences.values.sortedBy { it.id }
+
+    override suspend fun insertSchedules(schedules: List<RecurringScheduleEntity>): List<Long> =
+        schedules.map { insertSchedule(it) }
+
+    override suspend fun deleteAllOccurrences() {
+        occurrences.clear()
+    }
+
+    override suspend fun deleteAllSchedules() {
+        schedules.clear()
+    }
+
+    private inline fun transition(        id: Long,
         from: RecurringScheduleStatus,
         to: RecurringScheduleStatus,
         now: Instant,

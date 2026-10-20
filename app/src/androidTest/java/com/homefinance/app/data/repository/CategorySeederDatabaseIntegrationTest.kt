@@ -251,9 +251,9 @@ class CategorySeederDatabaseIntegrationTest {
     }
 
     /** A real settings DAO whose last write fails, standing in for a disk that gives up. */
-    private class FailingPutAppSettingDao(private val delegate: AppSettingDao) : AppSettingDao {
-
-        override suspend fun get(key: String): String? = delegate.get(key)
+    private class FailingPutAppSettingDao(
+        private val delegate: AppSettingDao,
+    ) : AppSettingDao by delegate {
 
         override suspend fun put(setting: AppSettingEntity) {
             throw IllegalStateException("the write failed after the categories were inserted")

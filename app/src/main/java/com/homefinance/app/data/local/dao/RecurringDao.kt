@@ -380,4 +380,28 @@ interface RecurringDao {
         skipped: RecurringOccurrenceStatus,
         now: Instant,
     ): Int
+
+    /** Every schedule, for a backup file. Includes retired and paused ones: they are the household's data. */
+    @Query("SELECT * FROM recurring_schedules ORDER BY id ASC")
+    suspend fun getAllSchedules(): List<RecurringScheduleEntity>
+
+    /** Every occurrence, for a backup file. */
+    @Query("SELECT * FROM recurring_occurrences ORDER BY id ASC")
+    suspend fun getAllOccurrences(): List<RecurringOccurrenceEntity>
+
+    /**
+     * Writes restored schedules with their original ids, so restored occurrences can still point at
+     * them. `ABORT` for the same reason as the transaction batch: inside the restore's transaction, a
+     * duplicate id means the whole file is rejected and nothing is written.
+     */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertSchedules(schedules: List<RecurringScheduleEntity>): List<Long>
+
+    /** Empties the occurrence history. Always called before [deleteAllSchedules]. */
+    @Query("DELETE FROM recurring_occurrences")
+    suspend fun deleteAllOccurrences()
+
+    /** Empties the schedules. Always called after [deleteAllOccurrences]. */
+    @Query("DELETE FROM recurring_schedules")
+    suspend fun deleteAllSchedules()
 }

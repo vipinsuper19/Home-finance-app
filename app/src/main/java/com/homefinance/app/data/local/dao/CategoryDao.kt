@@ -98,4 +98,35 @@ interface CategoryDao {
      */
     @Query("UPDATE categories SET is_active = 0 WHERE id = :id")
     suspend fun deactivate(id: Long)
+
+    /**
+     * Offers a retired category again, without touching any transaction filed under it.
+     *
+     * The mirror of [deactivate], and the reason it is a separate statement rather than a generic
+     * update: the only two states a category has are offered and retired, and neither ever rewrites
+     * the name or the history.
+     */
+    @Query("UPDATE categories SET is_active = 1 WHERE id = :id")
+    suspend fun activate(id: Long)
+
+    /** Every category, for a backup file, which carries the whole taxonomy rather than active rows only. */
+    @Query("SELECT * FROM categories ORDER BY type ASC, name COLLATE NOCASE ASC")
+    suspend fun getAll(): List<CategoryEntity>
+
+    /**
+     * Writes a whole restored taxonomy with its original ids, so the ledger's category references
+     * still resolve. `ABORT` inside the restore's transaction means a duplicate is the file's
+     * problem, and nothing is written.
+     */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(categories: List<CategoryEntity>): List<Long>
+
+    /**
+     * Empties the table, for a restore that replaces rather than merges.
+     *
+     * Never called while transactions reference these rows: the restore deletes the ledger first, and
+     * "Clear app data" deletes in dependency order, so the RESTRICT foreign key is never violated.
+     */
+    @Query("DELETE FROM categories")
+    suspend fun deleteAll()
 }

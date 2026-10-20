@@ -43,6 +43,44 @@ data class CategoryReportRoute(
 @Serializable
 data object SettingsRoute
 
+// Settings' own destinations. Each is a detail screen on top of Settings, so back returns to the
+// dashboard the household opened it from.
+@Serializable
+data object ThemeSettingsRoute
+
+@Serializable
+data object LanguageSettingsRoute
+
+@Serializable
+data object CurrencySettingsRoute
+
+@Serializable
+data object DateFormatSettingsRoute
+
+@Serializable
+data object BackupRestoreRoute
+
+@Serializable
+data object ExportDataRoute
+
+@Serializable
+data object ImportDataRoute
+
+@Serializable
+data object ManageCategoriesRoute
+
+@Serializable
+data object AppSettingsRoute
+
+/**
+ * One of the shipped documents, opened from App Settings.
+ *
+ * The enum's name travels rather than an index or a resource id: a route can carry a `String`, and a
+ * name stays readable if the enum is ever reordered.
+ */
+@Serializable
+data class LegalRoute(val document: String)
+
 // Detail destination opened from the Transactions screen's add action.
 @Serializable
 data object AddTransactionRoute

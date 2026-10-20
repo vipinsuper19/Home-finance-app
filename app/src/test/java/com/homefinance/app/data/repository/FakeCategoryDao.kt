@@ -113,6 +113,29 @@ class FakeCategoryDao(initial: List<CategoryEntity> = emptyList()) : CategoryDao
         }
     }
 
+    override suspend fun activate(id: Long) {
+        rows[id]?.let {
+            rows[id] = it.copy(isActive = true)
+            revision.value += 1
+        }
+    }
+
+    override suspend fun getAll(): List<CategoryEntity> =
+        rows.values.sortedWith(ACTIVE_FIRST_THEN_NAME)
+
+    override suspend fun insertAll(categories: List<CategoryEntity>): List<Long> =
+        categories.map { category ->
+            val id = if (category.id != 0L) category.id else nextId++
+            rows[id] = category.copy(id = id)
+            revision.value += 1
+            id
+        }
+
+    override suspend fun deleteAll() {
+        rows.clear()
+        revision.value += 1
+    }
+
     /**
      * One category by id, so a report can name what it is about.
      *

@@ -627,9 +627,7 @@ class HomeViewModelTest {
     /** Starts collecting the state the way the screen does, so the shared flow actually runs. */
     private fun TestScope.collectUiState(viewModel: HomeViewModel) {
         backgroundScope.launch { viewModel.uiState.collect { } }
-    }
-
-    /** Asserts the section is [HomeRecurringUiState.Ready] and returns it. */
+    }    /** Asserts the section is [HomeRecurringUiState.Ready] and returns it. */
     private fun HomeViewModel.ready(): HomeRecurringUiState.Ready {
         val state = uiState.value.recurring
         assertTrue("expected the section to have loaded, was $state", state is HomeRecurringUiState.Ready)
@@ -638,6 +636,52 @@ class HomeViewModelTest {
 
     private fun Fixture.viewModel(): HomeViewModel =
         HomeViewModel(recurring = repository, today = TODAY).also { viewModelStore.put("home", it) }
+
+    private fun Fixture.viewModel(showBalance: kotlinx.coroutines.flow.Flow<Boolean>): HomeViewModel =
+        HomeViewModel(recurring = repository, today = TODAY, showBalance = showBalance)
+            .also { viewModelStore.put("home", it) }
+
+    // ------------------------------------------------------------------ the balance preference
+
+    @Test
+    fun theBalanceIsShownUnlessTheHouseholdTurnsItOff() = runTest {
+        val viewModel = Fixture().viewModel()
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        assertTrue(viewModel.uiState.value.showBalance)
+    }
+
+    @Test
+    fun turningTheBalanceOffHidesTheAmountAndKeepsEveryOtherFigure() = runTest {
+        val viewModel = Fixture().viewModel(
+            showBalance = kotlinx.coroutines.flow.flowOf(false),
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        val state = viewModel.uiState.value
+
+        assertFalse(state.showBalance)
+        // The figure is still read and kept: the preference is about drawing it, not about losing it.
+        assertEquals(PlaceholderData.balanceInPaise, state.balanceInPaise)
+        assertEquals(PlaceholderData.incomeInPaise, state.incomeInPaise)
+        assertEquals(PlaceholderData.expenseInPaise, state.expenseInPaise)
+        assertTrue(state.recurring is HomeRecurringUiState.Ready)
+    }
+
+    @Test
+    fun aPreferenceReadThatFailsShowsTheBalanceRatherThanHidingIt() = runTest {
+        val viewModel = Fixture().viewModel(
+            showBalance = kotlinx.coroutines.flow.flow { throw IllegalStateException("no store") },
+        )
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        // A broken settings row is not a privacy mode: the dashboard still works, with its balance.
+        assertTrue(viewModel.uiState.value.showBalance)
+        assertTrue(viewModel.uiState.value.recurring is HomeRecurringUiState.Ready)
+    }
 
     /**
      * The whole data layer over the in-memory fakes, wired the way `HomeFinanceApp` wires the real one,

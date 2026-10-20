@@ -42,19 +42,29 @@ Home Finance is being built to make everyday financial tracking easier, includin
 - A Reports dashboard for a chosen monthly window - This Month, 3 Months, 6 Months or 1 Year - opening with the current month, stepping backwards and forwards by its own length and refusing to step past the month the device is in, with the window named in words and the current month marked as still running. Its figures are exact integer paise read from the household's own ledger: income, expenses, net cash flow, the count of entries behind each figure, a savings rate and a comparison against the previous window of the same length - each shown only when it says something true, so a window with no income states no savings rate and a window with nothing to compare against shows no badge.
 - An income-against-expenses chart and an Expenses by Category ring, both drawn from the same reads as the summary above them, with the ring listing every category largest-first, each naming what it came to and its share, each one tappable. For a one-month window the chart is bucketed by week; for longer windows by month. Empty directions and empty windows are stated in words rather than drawn as zeroes, and the five largest entries of the window are listed and open their own details.
 - A monthly trend covering the six months ending with the window's last month, so the month being read is always the right-hand bar, and a category drill-down opened by tapping a category that reports, for the same window, what that category came to, how many entries made it up, their average, its share of that direction's total, its own trend, its largest entries and every entry grouped under the day it was recorded - each openable.
+- A Settings dashboard with four groups - App & Appearance, Data & Backup, Manage Data, and App Settings - every row a real control: theme, language, currency and date format are choice screens with the current value named and selected; backup, restore, export, import and category management open their own working screens; the three behaviour switches and "Clear app data" live on the dashboard and the App Settings screen respectively. There is no profile header, because the app has no accounts, and no notification switches, because there is no notification workflow.
+- Theme selection between Light, Dark and System Default, applied app-wide including dialogs, cards and the status and navigation bar icons, persisted and restored on the next start.
+- A date-format preference (`5 Nov 2026`, `05/11/2026`, `2026-11-05`) with a live preview of today's date, applied through the one formatter every screen already uses; stored dates and the CSV contract are unchanged by it.
+- Preferences for showing or hiding the Home balance, confirming before a single transaction is deleted, and haptic feedback, all stored in the existing `app_setting` table and applied without a restart. Clear app data and restore always confirm regardless of the delete switch.
+- A versioned JSON backup written to a destination chosen through the system file picker, carrying categories, transactions, schedules, occurrences and display preferences with their ids preserved, and a restore that validates the file, states what it would replace, and replaces everything in one transaction or nothing at all.
+- CSV export and a two-step import: a header and RFC 4180 escaping, ISO dates and exact decimal amounts; a preview naming ready rows, duplicates and refused rows with their line numbers; a documented duplicate policy; and one transaction for the confirmed write.
+- Category management for renaming, retiring and restoring existing categories, reusing the same repository and leaving creation where it already lives - the transaction form's picker.
 - Unit tests for currency formatting, navigation destinations, placeholder content, home screen state, the dashboard's classification of a date as overdue, due today or upcoming and its preview limit, type conversion, category naming, category mark keys and the list of categories the app ships with, the one-off category seeder, the category mark palette, repository validation, money and quantity input parsing and their edit round trips, date and timestamp formatting, transaction list filtering and grouping, the add, edit and details screen states, the recurrence calculator, the recurring list, form, details and occurrence view models, the shared occurrence payment and skip state machine, and the report window arithmetic, daily-to-weekly and daily-to-monthly folding, category shares and percentages, axis scaling, and the Reports and category drill-down view models including their refresh after a write.
+- Unit tests for the settings model and its defaults, each preference key and its defensive parsing, the three date layouts and the process-wide style, CSV encoding and parsing including escaping and currency refusal, the import's preview, duplicate and commit rules, backup validation and a full round trip over the fakes, clear-data ordering and its seeder flag, the Settings view model's writes, failures and clear progress, the Home balance flag, and the delete-confirmation preference.
 - Instrumented tests against an in-memory Room database for DAO behaviour, migration safety through every step to the current schema, the unique category-name index as both an insert and an ignore, the recurring unique index and foreign keys, the outstanding-occurrence read behind the Home dashboard and its schedule count, category seeding including its rollback and its idempotence, the recurring repository and generator including concurrent and failed payments, and the transaction list, add-transaction form, edit-transaction form, category picker, transaction details, recurring list, recurring form, recurring details, occurrence history and Home dashboard sections, and the report aggregate and listing queries, the reports repository against a real database and both report screens.
+- Instrumented tests for preference persistence across a reopened database, clear-data consistency, a backup and restore round trip with real foreign keys, the rollback of a restore that fails part-way, CSV export and import against real tables, and the Settings dashboard's sections, rows, switches and tap targets.
 - No backend or account registration required for the current architecture.
 
 ### Planned
 
-- Manage categories: rename, retire, and restore them.
 - Track daily milk purchases over time, now that a single purchase can be recorded by quantity and rate.
 - Track monthly rental income.
 - Record expected and actual rent receipts, including partial payments and outstanding balances.
-- Schedule reminders for recurring payments.
-- Export financial records and support backup and restore.
-- Add validation and tests for financial calculations and data integrity.
+- Schedule reminders for recurring payments. This needs a notification workflow first: there are no notification switches
+  in Settings for exactly that reason.
+- Automatic or scheduled backups, and a cloud destination. Backups are manual today, and go wherever the household sends
+  them from the system file picker.
+- Translations, which need a populated `values-*` directory before the Language screen can offer them.
 
 Features will be marked as implemented as they are completed and verified.
 
@@ -441,6 +451,106 @@ and "View All" links. Three departures were made, and they are the only ones:
   report whose first and last day had to be reasoned about separately would be a different feature.
 - Nothing is exported and nothing is backed up yet - see the roadmap.
 
+## Settings, Backup and Restore
+
+Settings is a real dashboard rather than a placeholder. Each row is a working control, and every value is stored in the
+existing `app_setting` key/value table - there is no second preference store, and clearing the app's data clears it with
+everything else.
+
+### App and appearance
+
+- **Theme** - Light, Dark or System Default. The chosen mode is applied to every screen, dialog and surface, and the
+  status and navigation bar icons follow it, including while System Default is following the device. The default remains
+  Light, which is what the app looked like before the setting existed.
+- **Language** - the list is built from the languages the app actually ships translations for. Only English has string
+  resources today, so the only entry is English and the screen says that translations are pending; it does not offer a
+  language that would leave the interface untranslated.
+- **Currency** - the list is built from the currencies amounts can actually be recorded in. The ledger records integer
+  paise, so INR is the only entry, and the screen states that changing it never converts money. Amounts already stored are
+  untouched.
+- **Date format** - `5 Nov 2026`, `05/11/2026` or `2026-11-05`, with a live preview of today's date. The choice is applied
+  through one formatter used by every screen. Stored dates do not change: a date is still the same calendar day.
+- **Show balance on Home** - when off, the Home card does not draw the amount at all; the card, the labels and every other
+  figure stay where they were.
+- **Confirm before delete** - when off, deleting one transaction acts on the first tap. Restoring a backup and clearing all
+  data always ask, whatever this switch says, because neither can be undone.
+- **Haptic feedback** - when off, selection controls and the confirmed delete stop ticking. The preference never causes a
+  vibration on its own.
+- **Clear app data** - reached from App Settings, explained in a dialog, and performed only by the dialog's confirm
+  button. Every row is deleted through the database in one transaction - the database file is never deleted - and the
+  category seeder's flag is written back so the starter categories do not quietly return. The app is then left with no
+  categories, and the add form already offers to create the first one.
+- **Notifications** - deliberately absent. The app has no notification workflow to drive a reminder or summary switch, so
+  no such switch is shown. It remains future work rather than a control that stores a value nothing reads.
+
+### Backup format
+
+A backup is UTF-8 JSON, written to a destination the household chooses through the system file picker. The app never
+chooses a path and never asks for a storage permission. The document opens with its contract:
+
+```json
+{
+  "format": "home-finance-backup",
+  "version": 1,
+  "createdAt": "2026-11-05T10:15:30Z",
+  "appVersion": "1.0 (1)",
+  "categories": [ ... ],
+  "transactions": [ ... ],
+  "schedules": [ ... ],
+  "occurrences": [ ... ],
+  "settings": [ ... ]
+}
+```
+
+Every date is an ISO string, every enum is its name, and every amount is the same integer count of paise the database
+stores. Row ids are preserved, because they are the references between a transaction and its category and between an
+occurrence and its schedule and payment. The file carries the household's data and display preferences; the two
+"last backup" keys are deliberately excluded, because they describe this phone rather than the household's finances.
+The last successful backup time and size are recorded only **after** the write returns, so a failed write cannot claim a
+backup that does not exist.
+
+### Restore behaviour
+
+A chosen file is decoded and validated before anything is changed. The validation restates the database's own rules:
+every reference points at something the file contains, every amount is positive, every date and enum is one this build
+understands, and no two rows claim the same key. A file that fails is reported with plain sentences and nothing is
+written. A file that passes is summarised and confirmed by the household, then installed inside one transaction: the old
+rows are deleted dependents-first (occurrences, transactions, schedules, categories and settings) and the file's rows are
+written parents-first (categories, schedules, transactions, occurrences and settings), so every foreign key holds at
+every step, and a failure anywhere rolls the whole restore back and leaves the existing data exactly as it was. An
+unknown format, a newer version, an unknown field or a damaged file is refused rather than partly read. A restore does
+not use a destructive migration.
+
+### CSV export and import
+
+The export writes the documented header and the ledger's real rows:
+
+```text
+date,type,category,description,amount,currency,quantity,rate,notes
+```
+
+Dates are ISO in the file whatever the display layout is, amounts are plain two-decimal major units with no symbol or
+grouping, and text is escaped the RFC 4180 way (commas, quotes and line breaks quoted; embedded quotes doubled). UTF-8
+throughout. The success message counts the rows actually written.
+
+The import matches columns by name, so their order does not matter and extra columns are ignored; `date`, `type`,
+`category` and `amount` are mandatory. Every value is validated: dates may be ISO, `dd/MM/yyyy` or `d MMM yyyy`; amounts
+must be positive exact decimals; the type must be `INCOME` or `EXPENSE`; the category must exist in that direction; and a
+currency other than INR is refused rather than relabelled. A preview states how many rows are ready, how many are already
+in the ledger, and why each remaining row was refused. Nothing is written until the household confirms, and the confirmed
+rows are inserted in one transaction. A duplicate is the same payment recorded twice - same date, direction, category,
+amount, description and notes - and duplicates are skipped and counted, never silently dropped.
+
+### Known limitations
+
+- There are no notifications or reminders, and therefore no switches for them.
+- Backup is manual. There is no automatic or scheduled backup, and no cloud destination; the file goes wherever the
+  household sends it from the system picker.
+- Restore replaces the whole data set. It does not merge two households' records, because merging cannot be done without
+  inventing rules the household never agreed to.
+- Only English strings exist, so the Language screen offers only English until a translated `values-*` directory ships.
+- The app records INR only, so the Currency screen offers only INR and never converts.
+
 ## Database and Privacy
 
 The application is designed around local storage without requiring a backend for its core financial features.
@@ -471,7 +581,11 @@ it never had. The twelve categories the app ships with are written by the app it
 and recorded in `app_setting`; a migration is not the place for that, because it would have to invent names a
 household may already use. Categories the household writes are stored with no icon key at all and are drawn
 from their name instead, which is exactly what every version before 5 did.
-Backup and restore behavior will be implemented and tested as the application evolves.
+
+Settings preferences, and the two facts about the last successful backup, live in the existing `app_setting` table;
+no schema change and no migration were needed to add Settings. A backup is a versioned JSON file written where the
+household chooses, and a restore replaces the database's rows inside one transaction - see "Settings, Backup and
+Restore" above for the format and its guarantees.
 
 **Privacy note:** Local-first storage does not automatically guarantee that every data path is private or excluded from device backup. Review Android backup rules and export behavior before using the application for sensitive financial records.
 
@@ -488,7 +602,8 @@ Backup and restore behavior will be implemented and tested as the application ev
 | Task 4 | Recurring schedule engine, list, form and details | Completed |
 | Task 5 | Milk tracking and rental income management | Planned |
 | Task 6 | Reminders and local notifications | Planned |
-| Task 7 | Reports, export, and backup/restore | In progress - the Reports tab and its category drill-down are implemented and tested; export and backup/restore are planned |
+| Task 7 | Reports, export, and backup/restore | Completed - the Reports tab and its category drill-down, CSV export and import, and versioned backup and restore are implemented and tested |
+| Task 7.1 | Settings: theme, language, currency, date format, preferences, category management and clear data | Completed |
 | Task 8 | Comprehensive testing and release preparation | Planned |
 
 Statuses should be updated when each task has been implemented and verified.

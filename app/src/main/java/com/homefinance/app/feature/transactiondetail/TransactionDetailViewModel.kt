@@ -14,7 +14,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
@@ -51,6 +54,14 @@ import kotlinx.coroutines.launch
 class TransactionDetailViewModel(
     private val transactions: TransactionRepository,
     private val transactionId: Long,
+    /**
+     * Whether a delete asks before it acts.
+     *
+     * A `Flow` of the one boolean rather than the repository, so a test can pin it with
+     * `flowOf(false)` and the screen keeps its single dependency. Defaults to `true`, the behaviour
+     * that shipped, so the existing test factory is unchanged.
+     */
+    private val confirmBeforeDelete: Flow<Boolean> = flowOf(true),
 ) : ViewModel() {
 
     private val state = MutableStateFlow<TransactionDetailUiState>(TransactionDetailUiState.Loading)
@@ -65,6 +76,15 @@ class TransactionDetailViewModel(
      * uses to restart a failed category read.
      */
     private val reloads = MutableStateFlow(0)
+
+    /**
+     * Which delete request is the live one.
+     *
+     * Opening the confirmation now involves an asynchronous read of the preference, so "the household
+     * tapped delete and then dismissed it" can arrive before that read finishes. Counting requests and
+     * bumping the count on a dismissal is what makes the dismissal win.
+     */
+    private var deleteRequestGeneration = 0
 
     init {
         viewModelScope.launch {
@@ -98,13 +118,41 @@ class TransactionDetailViewModel(
         reloads.update { it + 1 }
     }
 
-    /** Opens the "Delete transaction?" confirmation. Does nothing once a deletion is under way. */
+    /**
+     * Asks for a delete.
+     *
+     * A household that turned "Confirm before delete" off gets a delete straight away; everyone else
+     * gets the confirmation. The preference is read once, on the tap, rather than collected for the
+     * life of the screen: it is a yes/no answered immediately, and a stale collector would keep a
+     * database observer alive for nothing.
+     *
+     * Reading it can fail; a failed read falls back to asking, because silently deleting is the one
+     * mistake that cannot be undone.
+     */
     fun onDeleteRequested() {
-        state.update { current ->
-            if (current is TransactionDetailUiState.Content && !current.deleted) {
-                current.copy(deleteConfirmationVisible = true, deleteError = null)
+        if (state.value !is TransactionDetailUiState.Content) return
+
+        val request = ++deleteRequestGeneration
+        viewModelScope.launch {
+            val ask = try {
+                confirmBeforeDelete.first()
+            } catch (_: Exception) {
+                true
+            }
+
+            // A dismissal that arrived while this read was in flight wins: it means "not this time".
+            if (request != deleteRequestGeneration) return@launch
+
+            if (ask) {
+                state.update { current ->
+                    if (current is TransactionDetailUiState.Content && !current.deleted) {
+                        current.copy(deleteConfirmationVisible = true, deleteError = null)
+                    } else {
+                        current
+                    }
+                }
             } else {
-                current
+                deleteNow()
             }
         }
     }
@@ -116,6 +164,9 @@ class TransactionDetailViewModel(
      * could still be dismissed mid-write would leave the household unsure whether it went through.
      */
     fun onDeleteDismissed() {
+        // Invalidates a request that is still reading the preference, so a dismissal can never be
+        // followed by the dialog appearing a moment later.
+        deleteRequestGeneration += 1
         state.update { current ->
             if (current is TransactionDetailUiState.Content && !current.isDeleting) {
                 current.copy(deleteConfirmationVisible = false)
@@ -140,11 +191,25 @@ class TransactionDetailViewModel(
      *    says so instead of reporting a deletion it did not perform.
      */
     fun confirmDelete() {
+        deleteNow()
+    }
+
+    /**
+     * The write itself, shared by the confirmed path and the "do not ask" path.
+     *
+     * The guard and the `isDeleting` flag are set synchronously, before the coroutine starts, so two
+     * taps that arrive together cannot both get past it.
+     */
+    private fun deleteNow() {
         val current = state.value
         if (current !is TransactionDetailUiState.Content) return
         if (current.isDeleting || current.deleted) return
 
-        state.value = current.copy(isDeleting = true, deleteError = null)
+        state.value = current.copy(
+            isDeleting = true,
+            deleteConfirmationVisible = false,
+            deleteError = null,
+        )
 
         viewModelScope.launch {
             val removed = try {
@@ -232,9 +297,13 @@ class TransactionDetailViewModel(
                     this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY],
                 ) { "TransactionDetailViewModel needs the Application to reach the repository" }
 
+                val app = application as HomeFinanceApp
                 TransactionDetailViewModel(
-                    transactions = (application as HomeFinanceApp).transactionRepository,
+                    transactions = app.transactionRepository,
                     transactionId = transactionId,
+                    confirmBeforeDelete = app.settingsRepository.preferences
+                        .map { it.confirmBeforeDelete }
+                        .distinctUntilChanged(),
                 )
             }
         }

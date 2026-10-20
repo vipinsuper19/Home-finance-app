@@ -256,6 +256,33 @@ class FakeTransactionDao(
      */
     private fun <T> observed(compute: () -> T): Flow<T> = revision.map { compute() }
 
+    /** Every row, oldest first, for a backup or an export. */
+    override suspend fun getAll(): List<TransactionEntity> =
+        rows.values.sortedWith(OLDEST_FIRST)
+
+    /**
+     * Writes a batch with its ids, `ABORT`-style: a duplicate id throws before anything is stored.
+     *
+     * The check is deliberate. A restore that carried two rows with one id must fail as a whole, and a
+     * fake that overwrote the first would let a broken file look restored.
+     */
+    override suspend fun insertAll(transactions: List<TransactionEntity>): List<Long> {
+        val duplicate = transactions
+            .filter { it.id != 0L }
+            .groupBy { it.id }
+            .entries
+            .firstOrNull { it.value.size > 1 }
+        check(duplicate == null) { "duplicate transaction id ${duplicate?.key}" }
+
+        return transactions.map { insert(it) }
+    }
+
+    override suspend fun deleteAll() {
+        deleteFailure?.let { throw it }
+        rows.clear()
+        revision.value += 1
+    }
+
     /** Joins one row to its category's name the way the real query does, dropping it if absent. */
     private fun withCategory(row: TransactionEntity): TransactionWithCategory? =
         categoryNames[row.categoryId]?.let { name ->
@@ -283,5 +310,9 @@ class FakeTransactionDao(
         /** The real `LIMIT` query's `ORDER BY t.amount_paise DESC, t.id DESC`. */
         val LARGEST_FIRST: Comparator<TransactionEntity> =
             compareByDescending<TransactionEntity> { it.amountPaise }.thenByDescending { it.id }
+
+        /** The backup read's `ORDER BY transaction_date ASC, id ASC`. */
+        val OLDEST_FIRST: Comparator<TransactionEntity> =
+            compareBy<TransactionEntity> { it.transactionDate }.thenBy { it.id }
     }
 }

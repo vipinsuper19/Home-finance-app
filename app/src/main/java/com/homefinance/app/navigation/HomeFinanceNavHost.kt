@@ -29,7 +29,18 @@ import com.homefinance.app.feature.reports.CategoryReportScreen
 import com.homefinance.app.feature.reports.ReportPeriod
 import com.homefinance.app.feature.reports.ReportRange
 import com.homefinance.app.feature.reports.ReportsScreen
+import com.homefinance.app.feature.settings.AppSettingsScreen
+import com.homefinance.app.feature.settings.BackupRestoreScreen
+import com.homefinance.app.feature.settings.CurrencySettingsScreen
+import com.homefinance.app.feature.settings.DateFormatSettingsScreen
+import com.homefinance.app.feature.settings.ExportDataScreen
+import com.homefinance.app.feature.settings.ImportDataScreen
+import com.homefinance.app.feature.settings.LanguageSettingsScreen
+import com.homefinance.app.feature.settings.LegalDocument
+import com.homefinance.app.feature.settings.LegalScreen
+import com.homefinance.app.feature.settings.ManageCategoriesScreen
 import com.homefinance.app.feature.settings.SettingsScreen
+import com.homefinance.app.feature.settings.ThemeSettingsScreen
 import com.homefinance.app.feature.transactiondetail.TransactionDetailScreen
 import com.homefinance.app.feature.transactions.TransactionsScreen
 import java.time.YearMonth
@@ -109,7 +120,58 @@ fun HomeFinanceNavHost(
             )
         }
         composable<SettingsRoute> {
-            SettingsScreen(onBack = { navController.navigateUp() })
+            SettingsScreen(
+                onBack = { navController.navigateUp() },
+                onOpenTheme = { navController.navigate(ThemeSettingsRoute) },
+                onOpenLanguage = { navController.navigate(LanguageSettingsRoute) },
+                onOpenCurrency = { navController.navigate(CurrencySettingsRoute) },
+                onOpenDateFormat = { navController.navigate(DateFormatSettingsRoute) },
+                onOpenBackupRestore = { navController.navigate(BackupRestoreRoute) },
+                onOpenExport = { navController.navigate(ExportDataRoute) },
+                onOpenImport = { navController.navigate(ImportDataRoute) },
+                onOpenManageCategories = { navController.navigate(ManageCategoriesRoute) },
+                // The recurring tab is the one place schedules are managed, so this switches to it the
+                // way the bottom bar does rather than opening a second, thinner list.
+                onOpenRecurring = { navController.switchTo(TopLevelDestination.Recurring) },
+                onOpenAppSettings = { navController.navigate(AppSettingsRoute) },
+            )
+        }
+        composable<ThemeSettingsRoute> {
+            ThemeSettingsScreen(onBack = { navController.navigateUp() })
+        }
+        composable<LanguageSettingsRoute> {
+            LanguageSettingsScreen(onBack = { navController.navigateUp() })
+        }
+        composable<CurrencySettingsRoute> {
+            CurrencySettingsScreen(onBack = { navController.navigateUp() })
+        }
+        composable<DateFormatSettingsRoute> {
+            DateFormatSettingsScreen(onBack = { navController.navigateUp() })
+        }
+        composable<BackupRestoreRoute> {
+            BackupRestoreScreen(onBack = { navController.navigateUp() })
+        }
+        composable<ExportDataRoute> {
+            ExportDataScreen(onBack = { navController.navigateUp() })
+        }
+        composable<ImportDataRoute> {
+            ImportDataScreen(onBack = { navController.navigateUp() })
+        }
+        composable<ManageCategoriesRoute> {
+            ManageCategoriesScreen(onBack = { navController.navigateUp() })
+        }
+        composable<AppSettingsRoute> {
+            AppSettingsScreen(
+                onBack = { navController.navigateUp() },
+                onOpenLegal = { document -> navController.navigate(LegalRoute(document.name)) },
+            )
+        }
+        composable<LegalRoute> { entry ->
+            val route = entry.toRoute<LegalRoute>()
+            LegalScreen(
+                document = LegalDocument.fromRoute(route.document),
+                onBack = { navController.navigateUp() },
+            )
         }
         composable<TransactionDetailRoute> { entry ->
             val transactionId = entry.toRoute<TransactionDetailRoute>().transactionId

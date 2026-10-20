@@ -3,6 +3,7 @@ package com.homefinance.app.data.local.dao
 import androidx.room.Dao
 import androidx.room.Delete
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.homefinance.app.data.local.entity.TransactionEntity
@@ -352,4 +353,33 @@ interface TransactionDao {
         to: LocalDate,
         limit: Int,
     ): Flow<List<TransactionWithCategory>>
+
+    /**
+     * Every transaction, newest first, for a backup file or a CSV export.
+     *
+     * A one-shot read rather than a `Flow`: both callers write a file and are done, and a file that
+     * quietly grew while it was being written would be a worse answer than a consistent snapshot.
+     */
+    @Query("SELECT * FROM transactions ORDER BY transaction_date ASC, id ASC")
+    suspend fun getAll(): List<TransactionEntity>
+
+    /**
+     * Writes a whole imported or restored batch, ids and all.
+     *
+     * `ABORT` rather than `IGNORE`: a restore that carried two rows with one id is a broken file, and
+     * a duplicate that was silently dropped would leave the household with a file that claims to hold
+     * more than it does. The caller writes this inside one transaction, so ABORT means nothing is
+     * written at all.
+     */
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(transactions: List<TransactionEntity>): List<Long>
+
+    /**
+     * Empties the table, for a restore or "Clear app data".
+     *
+     * Never called while occurrences still point at these rows: both callers delete occurrences
+     * first, so the `SET_NULL` foreign key never has to rewrite a row that is being removed.
+     */
+    @Query("DELETE FROM transactions")
+    suspend fun deleteAll()
 }

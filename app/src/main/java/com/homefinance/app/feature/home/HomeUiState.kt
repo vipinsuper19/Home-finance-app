@@ -26,6 +26,14 @@ data class HomeUiState(
     val expenseInPaise: Long,
     /** True while the figures above come from [com.homefinance.app.core.common.PlaceholderData]. */
     val isPlaceholderData: Boolean = true,
+    /**
+     * Whether the balance card may draw its amount.
+     *
+     * A display preference, not a data change: when it is off the amount is not rendered at all - it
+     * is not merely hidden behind a colour - and everything else on the card and the dashboard stays
+     * exactly where it was. Defaults to `true`, which is the behaviour that shipped before Settings.
+     */
+    val showBalance: Boolean = true,
     /** What the recurring section is showing, on its own, so its failure cannot blank the dashboard. */
     val recurring: HomeRecurringUiState = HomeRecurringUiState.Loading,
 )

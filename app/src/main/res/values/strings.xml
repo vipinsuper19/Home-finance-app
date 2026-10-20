@@ -15,6 +15,8 @@
 
     <!-- Home screen -->
     <string name="home_balance_label">Balance this month</string>
+    <string name="home_balance_hidden_value">••••••</string>
+    <string name="home_balance_hidden">Balance hidden in Settings</string>
     <string name="home_income_label">Income</string>
     <string name="home_expense_label">Expenses</string>
     <string name="home_sample_badge">Sample data</string>
@@ -424,5 +426,184 @@
 
     <!-- Destinations that are navigable but not implemented yet -->
     <string name="placeholder_coming_soon">Coming soon</string>
-    <string name="settings_placeholder">Currency, categories, reminders and other preferences are coming soon.</string>
+
+    <!-- Settings: main dashboard -->
+    <string name="settings_subtitle">Manage your app preferences</string>
+    <string name="settings_loading">Loading settings…</string>
+    <string name="settings_load_error">Could not read your settings.</string>
+    <string name="settings_retry">Try again</string>
+    <string name="settings_write_error">That preference could not be saved.</string>
+    <string name="settings_section_appearance">App &amp; Appearance</string>
+    <string name="settings_section_data">Data &amp; Backup</string>
+    <string name="settings_section_manage">Manage Data</string>
+    <string name="settings_section_app">App Settings</string>
+    <string name="settings_theme">Theme</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_currency">Currency</string>
+    <string name="settings_date_format">Date format</string>
+    <string name="settings_backup_restore">Backup &amp; Restore</string>
+    <string name="settings_backup_restore_summary">Save or restore a copy of your data</string>
+    <string name="settings_export_data">Export Data</string>
+    <string name="settings_export_data_summary">Write your transactions to a CSV file</string>
+    <string name="settings_import_data">Import Data</string>
+    <string name="settings_import_data_summary">Add transactions from a CSV file</string>
+    <string name="settings_manage_categories">Manage Categories</string>
+    <string name="settings_manage_categories_summary">Rename, retire and restore categories</string>
+    <string name="settings_manage_recurring">Manage Recurring Items</string>
+    <string name="settings_manage_recurring_summary">Open your recurring schedules</string>
+    <string name="settings_show_balance">Show balance on Home</string>
+    <string name="settings_show_balance_summary">When off, the amount is hidden and the rest of the dashboard stays</string>
+    <string name="settings_confirm_delete">Confirm before delete</string>
+    <string name="settings_confirm_delete_summary">Ask before removing a transaction</string>
+    <string name="settings_haptics">Haptic feedback</string>
+    <string name="settings_haptics_summary">A short tick when you choose, toggle or confirm</string>
+    <string name="settings_clear_data">Clear app data</string>
+    <string name="settings_clear_data_summary">Delete every transaction, category and preference</string>
+    <string name="settings_app_version">App version</string>
+    <string name="settings_privacy">Privacy Policy</string>
+    <string name="settings_terms">Terms &amp; Conditions</string>
+    <string name="settings_help">Help &amp; Support</string>
+    <string name="settings_value_light">Light</string>
+    <string name="settings_value_dark">Dark</string>
+    <string name="settings_value_system">System default</string>
+    <string name="settings_value_currency">%1$s (%2$s)</string>
+    <string name="settings_value_date_format">Example: %1$s</string>
+    <string name="settings_clear_dialog_title">Clear app data?</string>
+    <string name="settings_clear_dialog_message">This permanently deletes every transaction, category, recurring schedule and preference on this device. It cannot be undone.</string>
+    <string name="settings_clear_dialog_confirm">Delete everything</string>
+    <string name="settings_clear_done">All app data was deleted</string>
+    <string name="settings_clear_failed">The data could not be cleared. Nothing was changed.</string>
+    <string name="settings_clear_keeps_categories_note">Categories are deleted too, and will not be re-created automatically.</string>
+
+    <!-- Settings: theme -->
+    <string name="theme_title">Theme</string>
+    <string name="theme_intro">Choose how Home Finance looks. The choice is kept after you close the app and applies to every screen.</string>
+    <string name="theme_light_summary">White surfaces with the emerald accent</string>
+    <string name="theme_dark_summary">Dark surfaces for low light</string>
+    <string name="theme_system_summary">Follow the device\'s dark mode setting</string>
+
+    <!-- Settings: language -->
+    <string name="language_title">Language</string>
+    <string name="language_intro">A language appears here once its translations are complete. The choice is kept after you close the app.</string>
+    <string name="language_english_summary">English (India)</string>
+    <string name="language_supported_note">This app currently ships in English only.</string>
+
+    <!-- Settings: currency -->
+    <string name="currency_title">Currency</string>
+    <string name="currency_intro">Amounts are recorded in Indian Rupees and stored as whole paise. Choosing a currency changes how amounts are written, never what they are worth.</string>
+    <string name="currency_inr_summary">Amounts are entered and reported in rupees</string>
+    <string name="currency_no_conversion_note">Home Finance does not convert between currencies, so only a currency your amounts are recorded in can be offered here.</string>
+
+    <!-- Settings: date format -->
+    <string name="date_format_title">Date format</string>
+    <string name="date_format_intro">How dates are written across the app. The stored date never changes, only its layout.</string>
+    <string name="date_format_name_day_month_year">Day month year</string>
+    <string name="date_format_name_numeric">Day/month/year</string>
+    <string name="date_format_name_iso">Year-month-day</string>
+
+    <!-- Settings: app settings -->
+    <string name="app_settings_title">App Settings</string>
+    <string name="app_settings_intro">Privacy, feedback and the one destructive action, kept apart from your day-to-day preferences.</string>
+    <string name="app_settings_privacy_note">No account is created and no data leaves this device. A backup or export only goes where you send it.</string>
+
+    <!-- Settings: backup and restore -->
+    <string name="backup_title">Backup &amp; Restore</string>
+    <string name="backup_intro">A backup is one versioned JSON file holding your whole ledger, your categories, your recurring schedules and their history, and your preferences.</string>
+    <string name="backup_create">Create backup</string>
+    <string name="backup_create_summary">Write all your data to one file</string>
+    <string name="backup_restore">Restore backup</string>
+    <string name="backup_restore_summary">Replace this device\'s data from a backup file</string>
+    <string name="backup_creating">Writing backup…</string>
+    <string name="backup_reading">Reading the file…</string>
+    <string name="backup_restoring">Restoring data…</string>
+    <string name="backup_created">Backup saved</string>
+    <string name="backup_create_failed">The backup could not be written. Nothing was changed.</string>
+    <string name="backup_read_failed">The selected file could not be read.</string>
+    <string name="backup_restore_confirm_title">Restore this backup?</string>
+    <string name="backup_restore_confirm_message">This replaces every transaction, category, recurring schedule and preference on this device with the file\'s contents. It cannot be undone.</string>
+    <string name="backup_restore_confirm_summary">The file holds %1$d transactions, %2$d categories, %3$d recurring schedules and %4$d occurrences.</string>
+    <string name="backup_restore_failed">The restore could not be completed. Nothing was changed.</string>
+    <string name="backup_restore_action">Restore</string>
+    <string name="backup_restore_rejected_title">Nothing was restored</string>
+    <string name="backup_restore_done_title">Restore complete</string>
+    <string name="backup_restore_done_message">%1$d transactions, %2$d categories, %3$d recurring schedules and %4$d occurrences were restored.</string>
+    <string name="backup_info_title">Backup information</string>
+    <string name="backup_last_backup">Last backup</string>
+    <string name="backup_never">No backup has been created on this device</string>
+    <string name="backup_size">File size</string>
+    <string name="backup_includes">Included in every backup</string>
+    <string name="backup_includes_value">Transactions, categories, recurring schedules, occurrences and preferences</string>
+    <string name="backup_auto_unavailable">Automatic backups are not available. A backup is written only when you create one.</string>
+    <string name="backup_file_size">%1$s</string>
+    <string name="backup_size_bytes">%1$d bytes</string>
+    <string name="backup_size_kilobytes">%1$s KB</string>
+    <string name="backup_size_megabytes">%1$s MB</string>
+
+    <!-- Settings: export -->
+    <string name="export_title">Export Data</string>
+    <string name="export_intro">Your transactions are written as UTF-8 CSV using ISO dates and plain decimal amounts, so the same file can be imported again on any device.</string>
+    <string name="export_action">Export transactions</string>
+    <string name="export_working">Writing file…</string>
+    <string name="export_done">Exported %1$d transactions</string>
+    <string name="export_failed">The file could not be written. Nothing was changed.</string>
+    <string name="export_format_title">Format</string>
+    <string name="export_columns_title">Columns</string>
+    <string name="export_columns_value">date, type, category, description, amount, currency, quantity, rate, notes</string>
+    <string name="export_contract_note">A quoted field may contain commas, quotes and line breaks; a quote inside a field is doubled. Amounts never carry a currency symbol.</string>
+
+    <!-- Settings: import -->
+    <string name="import_title">Import Data</string>
+    <string name="import_intro">Choose a CSV file exported by Home Finance. Nothing is written until you have seen the summary and confirmed.</string>
+    <string name="import_action">Choose a CSV file</string>
+    <string name="import_reading">Reading file…</string>
+    <string name="import_ready">%1$d rows ready</string>
+    <string name="import_duplicates">%1$d already in your records</string>
+    <string name="import_problems">%1$d rows cannot be imported</string>
+    <string name="import_nothing">There is nothing to import from this file.</string>
+    <string name="import_commit">Import %1$d transactions</string>
+    <string name="import_confirm_title">Import these transactions?</string>
+    <string name="import_confirm_message">%1$d transactions will be added. %2$d duplicates and %3$d invalid rows will be skipped.</string>
+    <string name="import_committing">Importing…</string>
+    <string name="import_done_title">Import complete</string>
+    <string name="import_done_message">Added %1$d transactions. %2$d were already present.</string>
+    <string name="import_failed">The import failed. Nothing was added.</string>
+    <string name="import_read_failed">The selected file could not be read.</string>
+    <string name="import_problems_title">Rows that will not be imported</string>
+    <string name="import_summary_title">Summary</string>
+    <string name="import_duplicate_note">A row already in your records is skipped rather than added twice. Matching uses date, direction, category, amount, description and notes.</string>
+
+    <!-- Settings: manage categories -->
+    <string name="manage_categories_title">Manage Categories</string>
+    <string name="manage_categories_intro">Rename a category, retire one you no longer use, or restore a retired one. Retired categories stay in your history but are not offered for new entries.</string>
+    <string name="manage_categories_empty">No categories yet. Add one while recording a transaction.</string>
+    <string name="manage_categories_income">Income</string>
+    <string name="manage_categories_expense">Expense</string>
+    <string name="manage_categories_active">Active</string>
+    <string name="manage_categories_retired">Retired</string>
+    <string name="manage_categories_rename_title">Rename category</string>
+    <string name="manage_categories_name_label">Name</string>
+    <string name="manage_categories_rename_action">Rename</string>
+    <string name="manage_categories_tap_note">Tap a category to rename it.</string>
+    <string name="manage_categories_retire_action">Retire</string>
+    <string name="manage_categories_restore_action">Restore</string>
+    <string name="manage_categories_error_blank">Enter a name</string>
+    <string name="manage_categories_error_duplicate">Another category already uses that name</string>
+    <string name="manage_categories_error_failed">The category could not be changed</string>
+    <string name="manage_categories_load_error">Could not read your categories.</string>
+    <string name="manage_categories_loading">Loading categories…</string>
+
+    <!-- Settings: help and legal -->
+    <string name="legal_privacy_title">Privacy Policy</string>
+    <string name="legal_terms_title">Terms &amp; Conditions</string>
+    <string name="legal_help_title">Help &amp; Support</string>
+    <string name="legal_privacy_body">Home Finance keeps everything on this device.\n\nThe app creates no account, asks for no sign-in, and makes no network request. Your transactions, categories, recurring schedules and preferences are stored in a local SQLite database that only this app can read. Nothing is uploaded, and there is no analytics or advertising library in the app.\n\nA backup or a CSV export leaves the device only when you choose a destination through the system file picker. That destination is then outside the app\'s control, and its own privacy terms apply.\n\nClearing app data deletes the database contents from this device. Uninstalling the app also removes them. A copy you exported earlier is not affected.</string>
+    <string name="legal_terms_body">Home Finance is a personal bookkeeping tool provided as-is, without warranty of any kind.\n\nAll financial figures are entered by you. The app performs no bank connection, no currency conversion and no financial advice. Back up your data before a restore or a clear, because those operations cannot be undone.\n\nYou are responsible for keeping any exported backup or CSV file safe and for the accuracy of the records you enter.\n\nThe app is open source; the repository\'s licence governs use of the source code.</string>
+    <string name="legal_help_body">Recording an entry: open Transactions and use the add action. Choose income or expense, a category, the amount and the date. Quantity and rate are optional and are for things bought by weight or volume, such as milk.\n\nRecurring items: a schedule is a plan, not spending. Nothing is added to your totals until you mark an occurrence as paid; pausing or stopping a schedule never deletes anything.\n\nReports: choose this month, three months, six months or a year. Tap a category to open its own report for the same period.\n\nBackups: create a backup before you restore, import or clear data. A backup is one JSON file; an export is a CSV of your transactions only.\n\nIf a screen shows an error, you can retry the read without losing anything: the app never writes a partial result.</string>
+    <string name="legal_in_app_note">This document is shown inside the app. No online policy page or support address is configured.</string>
+
+    <!-- Shared settings actions -->
+    <string name="settings_action_save">Save</string>
+    <string name="settings_action_close">Close</string>
+    <string name="settings_action_cancel">Cancel</string>
 </resources>
+

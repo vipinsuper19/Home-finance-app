@@ -14,6 +14,7 @@ import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -320,9 +321,11 @@ class TransactionDetailViewModelTest {
     private fun viewModelOver(
         transactionDao: TransactionDao,
         transactionId: Long = 1L,
+        confirmBeforeDelete: Flow<Boolean> = flowOf(true),
     ): TransactionDetailViewModel = TransactionDetailViewModel(
         transactions = TransactionRepository(transactionDao, FakeCategoryDao(emptyList())),
         transactionId = transactionId,
+        confirmBeforeDelete = confirmBeforeDelete,
     ).also { viewModelStore.put("detail", it) }
 
     /** A fake ledger holding [row], with the category name its id resolves to. */
@@ -357,6 +360,61 @@ class TransactionDetailViewModelTest {
         updatedAt = AUDIT_INSTANT,
         categoryName = "Groceries",
     )
+
+    // ------------------------------------------------------------------ the preference
+
+    @Test
+    fun turningOffTheConfirmationDeletesOnTheFirstTap() = runTest {
+        val transactions = seededDao()
+        val viewModel = viewModelOver(transactions, confirmBeforeDelete = flowOf(false))
+        advanceUntilIdle()
+
+        viewModel.onDeleteRequested()
+        advanceUntilIdle()
+
+        val content = contentOf(viewModel)
+        assertEquals(false, content.deleteConfirmationVisible)
+        assertTrue(content.deleted)
+        assertEquals(listOf(1L), transactions.deletedIds)
+    }
+
+    @Test
+    fun aPreferenceThatCannotBeReadStillAsks() = runTest {
+        val transactions = seededDao()
+        val viewModel = viewModelOver(
+            transactions,
+            confirmBeforeDelete = kotlinx.coroutines.flow.flow { throw IllegalStateException("no store") },
+        )
+        advanceUntilIdle()
+
+        viewModel.onDeleteRequested()
+        advanceUntilIdle()
+
+        val content = contentOf(viewModel)
+        assertTrue(content.deleteConfirmationVisible)
+        assertEquals(false, content.deleted)
+        assertEquals(emptyList<Long>(), transactions.deletedIds)
+    }
+
+    @Test
+    fun withTheConfirmationOffADismissalStillCancelsThePendingDelete() = runTest {
+        val transactions = seededDao()
+        val viewModel = viewModelOver(
+            transactions,
+            confirmBeforeDelete = kotlinx.coroutines.flow.flow {
+                kotlinx.coroutines.yield()
+                emit(false)
+            },
+        )
+        advanceUntilIdle()
+
+        viewModel.onDeleteRequested()
+        viewModel.onDeleteDismissed()
+        advanceUntilIdle()
+
+        assertEquals(emptyList<Long>(), transactions.deletedIds)
+        assertEquals(false, contentOf(viewModel).deleted)
+    }
 
     /**
      * A ledger whose one observable row can be pushed to, standing in for Room's invalidation

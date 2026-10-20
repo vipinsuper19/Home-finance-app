@@ -79,4 +79,12 @@ class CategoryRepository(private val categoryDao: CategoryDao) {
      * transaction already filed under it keeps pointing at a row that still exists.
      */
     suspend fun deactivate(id: Long) = categoryDao.deactivate(id)
+
+    /**
+     * Offers a retired category again, so it can be chosen for new entries.
+     *
+     * The inverse of [deactivate] and equally free of destruction: every transaction already filed
+     * under the category keeps pointing at the same row, and the name is untouched.
+     */
+    suspend fun activate(id: Long) = categoryDao.activate(id)
 }
