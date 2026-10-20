@@ -30,8 +30,9 @@ sealed interface RecurringDetailUiState {
      * @param outstanding the earliest occurrence that is still pending - **not** the earliest that is
      *   overdue. A household opening a schedule wants the one thing they can act on next, and if nothing
      *   is pending there is genuinely nothing to offer, however far back the last paid date is.
-     * @param recentOccurrences the newest occurrences, for the short history at the foot of the screen.
-     *   The full list lives on the occurrence history screen.
+     * @param recentOccurrences the first few occurrences in the list's order - the soonest waiting
+     *   dates, then the newest settled ones - for the short list at the foot of the screen. The full
+     *   list lives on the occurrence history screen.
      * @param occurrenceCount how many occurrences exist in total, so the history's own button can say
      *   whether it is worth opening without that screen having to be read first.
      * @param today the day every occurrence above was read against. Carried because the history rows

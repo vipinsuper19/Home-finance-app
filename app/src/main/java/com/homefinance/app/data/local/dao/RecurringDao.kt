@@ -231,12 +231,20 @@ interface RecurringDao {
     suspend fun getOccurrenceById(id: Long): RecurringOccurrenceEntity?
 
     /**
-     * One schedule's occurrences, newest first, each carrying the schedule's name and category.
+     * One schedule's occurrences: still-pending dates soonest first, then settled history newest first.
      *
-     * Newest first for the same reason the ledger is: the household knows roughly when something
-     * happened and is looking for the most recent one. The occurrence that actually wants attention -
-     * the oldest still pending one, which is the one that is overdue - is what the schedule's own
-     * details screen offers as "Mark as paid", so nothing has to be hunted for in this list.
+     * ### Why pending dates lead
+     *
+     * The date that wants attention is the one the household can still act on, and the soonest of
+     * those is the one that is due today, or overdue. Putting an already-paid date above a waiting
+     * one would bury the only rows with a "Mark as paid" action under history; putting the *latest*
+     * generated date first - a future date the engine has already planned - would push today's bill
+     * below dates that are not due yet. So pending dates are read oldest first, and the list opens on
+     * the date closest to now.
+     *
+     * Settled dates follow them, newest first, for the same reason the ledger is: the household knows
+     * roughly when something happened and is looking for the most recent one. The two groups never mix,
+     * so history cannot push a waiting date down and a waiting date cannot split the history.
      *
      * An `INNER JOIN` on both parents, because both foreign keys are non-null and neither parent is
      * ever deleted: there is no such thing as an occurrence without a schedule, and no schedule
@@ -264,7 +272,11 @@ interface RecurringDao {
         INNER JOIN recurring_schedules AS s ON s.id = o.schedule_id
         INNER JOIN categories AS c ON c.id = s.category_id
         WHERE o.schedule_id = :scheduleId
-        ORDER BY o.due_date DESC, o.id DESC
+        ORDER BY CASE o.status WHEN 'PENDING' THEN 0 ELSE 1 END ASC,
+                 CASE WHEN o.status = 'PENDING' THEN o.due_date END ASC,
+                 CASE WHEN o.status = 'PENDING' THEN o.id END ASC,
+                 CASE WHEN o.status <> 'PENDING' THEN o.due_date END DESC,
+                 CASE WHEN o.status <> 'PENDING' THEN o.id END DESC
         """,
     )
     fun observeOccurrencesForSchedule(scheduleId: Long): Flow<List<RecurringOccurrenceDetail>>

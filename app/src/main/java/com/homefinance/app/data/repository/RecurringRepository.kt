@@ -1,5 +1,6 @@
 package com.homefinance.app.data.repository
 
+import com.homefinance.app.core.util.QuantityInput
 import com.homefinance.app.core.util.RecurrenceCalculator
 import com.homefinance.app.data.local.TransactionRunner
 import com.homefinance.app.data.local.dao.RecurringDao
@@ -101,7 +102,10 @@ class RecurringRepository(
     fun observeSchedule(scheduleId: Long): Flow<RecurringScheduleWithProgress?> =
         recurringDao.observeScheduleWithProgress(scheduleId)
 
-    /** One schedule's occurrences, newest first, each carrying the schedule's name and category. */
+    /**
+     * One schedule's occurrences - waiting dates soonest first, then settled history newest first -
+     * each carrying the schedule's name and category.
+     */
     fun observeOccurrences(scheduleId: Long): Flow<List<RecurringOccurrenceDetail>> =
         recurringDao.observeOccurrencesForSchedule(scheduleId)
 
@@ -403,14 +407,20 @@ class RecurringRepository(
      * passes what was actually paid. The screens default it to the occurrence's expected amount, and
      * validate it with the same exact-parsing rule the add form uses.
      *
-     * ### Why the unit price is *not* carried into the entry
+     * ### Carrying the unit price when it divides the amount
      *
      * The schedule's [RecurringScheduleEntity.unit] and [RecurringScheduleEntity.ratePaise] describe
-     * what the household expects to buy and at what price; the ledger records what was actually paid,
-     * which may be a different quantity of it. Copying a rate across without the quantity that made
-     * the amount would put two figures on the entry that do not multiply out - which is exactly what
-     * [TransactionRepository] refuses to store - so the rate stays where the household is going to
-     * read it, on the plan.
+     * what the household expects to buy and at what price. The ledger records what was actually paid,
+     * which may be a different quantity of it, so the rate is only carried across when the paid amount
+     * recovers a whole quantity at that rate: [QuantityInput.quantityThousandthsFor] returns the
+     * thousandths that multiply back to exactly [amountPaise], and two figures that do not multiply
+     * out are never written - [TransactionRepository] refuses those, and the household's own milk
+     * entry should read the same way whether it came from the add form or from a schedule.
+     *
+     * A corrected amount that is not a whole number of thousandths at the plan's rate has no honest
+     * quantity, so that entry is written as a plain amount. The unit's *name* has no column in the
+     * ledger and is not carried anywhere: a transaction stores the count and the rate, not what the
+     * count was of.
      *
      * ### Idempotence, in three layers
      *
@@ -452,12 +462,22 @@ class RecurringRepository(
                         "be paid",
                 )
 
+            // The plan records a price per unit but not how many units were expected, so the
+            // quantity is recovered from what was actually handed over. Null means the amount is not
+            // a whole number of units at that rate; the entry is then a plain amount rather than an
+            // invented quantity.
+            val quantityThousandths = schedule.ratePaise?.let { rate ->
+                QuantityInput.quantityThousandthsFor(amountPaise, rate)
+            }
+
             val transactionId = transactions.add(
                 type = category.type,
                 amountPaise = amountPaise,
                 categoryId = schedule.categoryId,
                 transactionDate = occurrence.dueDate,
                 description = schedule.name,
+                quantityThousandths = quantityThousandths,
+                ratePaise = schedule.ratePaise.takeIf { quantityThousandths != null },
                 now = now,
             )
 

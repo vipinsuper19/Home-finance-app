@@ -85,6 +85,30 @@ class TransactionsUiStateTest {
         assertEquals(null, row(id = 1L, categoryName = "Salary", description = null).toListItem().description)
     }
 
+    @Test
+    fun aQuantityAndRateReachTheRowTogether() {
+        // The list draws the pair as well as the details screen, so it has to travel through the
+        // projection rather than being looked up again by the composable.
+        val item = row(
+            id = 1L,
+            categoryName = "Milk",
+            description = "Morning milk",
+            quantityThousandths = 2_000L,
+            ratePaise = 6_000L,
+        ).toListItem()
+
+        assertEquals(2_000L, item.quantityThousandths)
+        assertEquals(6_000L, item.ratePaise)
+    }
+
+    @Test
+    fun aPlainAmountKeepsQuantityAndRateAbsent() {
+        val item = row(id = 1L, categoryName = "Groceries").toListItem()
+
+        assertEquals(null, item.quantityThousandths)
+        assertEquals(null, item.ratePaise)
+    }
+
     // -------------------------------------------------------------------- grouping
 
     @Test

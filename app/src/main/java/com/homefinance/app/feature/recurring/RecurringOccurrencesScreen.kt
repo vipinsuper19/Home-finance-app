@@ -31,8 +31,8 @@ import com.homefinance.app.data.model.TransactionType
 import java.time.LocalDate
 
 /**
- * Every occurrence of one schedule, newest first: what fell due, what it was expected to be worth, and what
- * became of each one.
+ * Every occurrence of one schedule, waiting dates soonest first and settled history newest first: what
+ * fell due, what it was expected to be worth, and what became of each one.
  *
  * ### The rows here *are* actionable
  *

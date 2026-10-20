@@ -44,7 +44,8 @@ internal sealed interface ScheduleAndOccurrencesRead {
     data class Failed(val cause: Throwable) : ScheduleAndOccurrencesRead
 
     /**
-     * The schedule with its occurrences, newest first as the DAO orders them.
+     * The schedule with its occurrences in the DAO's order: waiting dates soonest first, then settled
+     * history newest first.
      *
      * The occurrences are the raw projections rather than a screen's display type, because the two
      * screens want different slices of them - the details screen wants the outstanding one and a short

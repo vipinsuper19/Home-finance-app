@@ -822,18 +822,35 @@ class RecurringRepositoryTest {
     }
 
     @Test
-    fun theUnitPriceIsNotCarriedIntoTheEntry() = runBlocking {
+    fun aUnitPriceIsCarriedWhenTheAmountRecoversAWholeQuantity() = runBlocking {
         val fixture = Fixture(
-            initialSchedules = listOf(schedule(unit = "litre", ratePaise = 6_000L, amountPaise = 6_000L)),
-            initialOccurrences = listOf(occurrence(id = 1L, dueDate = date(2026, 10, 5), amountPaise = 6_000L)),
+            initialSchedules = listOf(schedule(unit = "litre", ratePaise = 6_000L, amountPaise = 12_000L)),
+            initialOccurrences = listOf(occurrence(id = 1L, dueDate = date(2026, 10, 5), amountPaise = 12_000L)),
         )
 
-        fixture.repository.markOccurrencePaid(1L, 6_000L, now)
+        fixture.repository.markOccurrencePaid(1L, 12_000L, now)
 
-        // The plan's price for one unit is not what was bought: copying it onto the entry without the
-        // quantity that made the amount would store two figures that do not multiply out.
+        // Two litres at ₹60: the paired figures the household entered on the add form, and the pair
+        // the ledger's own check demands, are recovered from the amount the plan expected.
         val transaction = fixture.transactionDao.inserted.single()
-        assertEquals(6_000L, transaction.amountPaise)
+        assertEquals(12_000L, transaction.amountPaise)
+        assertEquals(2_000L, transaction.quantityThousandths)
+        assertEquals(6_000L, transaction.ratePaise)
+    }
+
+    @Test
+    fun theUnitPriceIsNotCarriedWhenTheAmountIsNotAWholeQuantity() = runBlocking {
+        val fixture = Fixture(
+            initialSchedules = listOf(schedule(unit = "litre", ratePaise = 10_000L, amountPaise = 12_345L)),
+            initialOccurrences = listOf(occurrence(id = 1L, dueDate = date(2026, 10, 5), amountPaise = 12_345L)),
+        )
+
+        fixture.repository.markOccurrencePaid(1L, 12_345L, now)
+
+        // ₹123.45 at ₹100.00 a litre is not a whole number of thousandths, so the entry stays a plain
+        // amount rather than storing a rate and a quantity that do not multiply back to it.
+        val transaction = fixture.transactionDao.inserted.single()
+        assertEquals(12_345L, transaction.amountPaise)
         assertEquals(null, transaction.quantityThousandths)
         assertEquals(null, transaction.ratePaise)
     }

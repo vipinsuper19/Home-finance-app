@@ -19,8 +19,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Backs one schedule's occurrence history: every date it has generated, newest first, and the two things
- * the household can still do to a date that has not been settled.
+ * Backs one schedule's occurrence list: every date it has generated - waiting dates soonest first,
+ * then settled history newest first - and the two things the household can still do to a date that has
+ * not been settled.
  *
  * ### Where the data comes from
  *

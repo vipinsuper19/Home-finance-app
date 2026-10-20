@@ -155,4 +155,33 @@ object QuantityInput {
             null
         }
     }
+
+    /**
+     * The whole thousandths of a unit that come to exactly [amountPaise] at [ratePaise] each, or
+     * `null` when no such count exists.
+     *
+     * [amountPaise]'s inverse, for the one place an amount was recorded without a quantity: a
+     * recurring schedule keeps the price of one unit and the expected total, but not how many units
+     * that total was for. The answer is only returned when multiplying it back gives the same amount,
+     * so a caller can store the pair without breaking the ledger's `quantity x rate = amount` rule.
+     * A total that is not a whole number of thousandths at that rate has no honest quantity, and
+     * `null` says so rather than inventing one.
+     *
+     * Both arguments must be positive; anything else - zero, a negative, or a value that cannot be
+     * represented in the `Long` columns - is `null`.
+     */
+    fun quantityThousandthsFor(amountPaise: Long, ratePaise: Long): Long? {
+        if (amountPaise <= 0L || ratePaise <= 0L) return null
+
+        val thousandths = try {
+            BigDecimal.valueOf(amountPaise)
+                .multiply(THOUSANDTHS_PER_UNIT)
+                .divide(BigDecimal.valueOf(ratePaise), 0, RoundingMode.HALF_UP)
+                .longValueExact()
+        } catch (_: ArithmeticException) {
+            return null
+        }
+
+        return thousandths.takeIf { it > 0L && amountPaise(it, ratePaise) == amountPaise }
+    }
 }

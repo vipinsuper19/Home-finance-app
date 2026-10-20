@@ -209,15 +209,17 @@ class FakeRecurringDao(
     ): Flow<List<RecurringOccurrenceDetail>> {
         readFailure?.let { failure -> return flow { throw failure } }
 
-        return flowOf(
-            occurrences.values
-                .filter { it.scheduleId == scheduleId }
-                .sortedWith(
-                    compareByDescending<RecurringOccurrenceEntity> { it.dueDate }
-                        .thenByDescending { it.id },
-                )
-                .mapNotNull { it.withSchedule() },
-        )
+        val forSchedule = occurrences.values.filter { it.scheduleId == scheduleId }
+        val pending = forSchedule
+            .filter { it.status == RecurringOccurrenceStatus.PENDING }
+            .sortedWith(compareBy<RecurringOccurrenceEntity> { it.dueDate }.thenBy { it.id })
+        val settled = forSchedule
+            .filter { it.status != RecurringOccurrenceStatus.PENDING }
+            .sortedWith(
+                compareByDescending<RecurringOccurrenceEntity> { it.dueDate }.thenByDescending { it.id },
+            )
+
+        return flowOf((pending + settled).mapNotNull { it.withSchedule() })
     }
 
     /**

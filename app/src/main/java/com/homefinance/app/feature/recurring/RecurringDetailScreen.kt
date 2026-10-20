@@ -826,7 +826,8 @@ private fun SummaryFigureDivider(modifier: Modifier = Modifier) {
 }
 
 /**
- * The newest few occurrences, each leading to the full list.
+ * The first few occurrences - waiting dates soonest first, then settled history newest first - each
+ * leading to the full list.
  *
  * The rows are read-only in the sense that matters: tapping one opens the occurrence history, where
  * every row is the thing being acted on, rather than offering settle buttons inside a summary. That

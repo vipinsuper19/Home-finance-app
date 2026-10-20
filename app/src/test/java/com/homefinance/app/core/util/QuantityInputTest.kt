@@ -179,6 +179,52 @@ class QuantityInputTest {
         assertEquals(9_000L, QuantityInput.amountPaise(quantity.thousandths, rate.paise))
     }
 
+    // ------------------------------------------- recovering a quantity from a total
+
+    @Test
+    fun aTotalAndARateRecoverTheWholeQuantity() {
+        // The inverse of amountPaise: two litres at ₹60 is ₹120.
+        assertEquals(1_500L, quantityFor(amountPaise = 9_000L, ratePaise = 6_000L))
+        assertEquals(2_000L, quantityFor(amountPaise = 12_000L, ratePaise = 6_000L))
+    }
+
+    @Test
+    fun aRoundedTotalRecoversTheQuantityThatMultipliesBackToIt() {
+        // 0.333 units at ₹59.99 is stored as 1998 paise after half-up rounding; the quantity that
+        // reproduces that total is still 333, not a nearby figure that would fail the ledger's check.
+        val quantity = quantityFor(amountPaise = 1_998L, ratePaise = 5_999L)
+
+        assertEquals(333L, quantity)
+        assertEquals(1_998L, amountPaise(quantity!!, 5_999L))
+    }
+
+    @Test
+    fun aTotalThatIsNotAWholeQuantityAtThatRateIsRefused() {
+        // ₹0.15 at ₹100.00 a unit is 0.0015 units: there is no whole thousandth that comes to it.
+        assertNull(quantityFor(amountPaise = 15L, ratePaise = 10_000L))
+    }
+
+    @Test
+    fun anAmountOrRateThatIsNotPositiveIsRefused() {
+        assertNull(quantityFor(amountPaise = 0L, ratePaise = 6_000L))
+        assertNull(quantityFor(amountPaise = 6_000L, ratePaise = 0L))
+        assertNull(quantityFor(amountPaise = -6_000L, ratePaise = 6_000L))
+        assertNull(quantityFor(amountPaise = 6_000L, ratePaise = -6_000L))
+    }
+
+    @Test
+    fun aQuantityThatCouldNotFitTheColumnIsRefusedRatherThanWrapped() {
+        assertNull(quantityFor(amountPaise = Long.MAX_VALUE, ratePaise = 1L))
+    }
+
+    @Test
+    fun everyExactProductRoundTripsBackToItsQuantity() {
+        listOf(1L, 250L, 1_000L, 1_500L, 2_000L, 12_345L).forEach { thousandths ->
+            val total = amountPaise(thousandths, 6_000L)
+            assertEquals(thousandths, quantityFor(total!!, 6_000L))
+        }
+    }
+
     // ------------------------------------------------------------ toEditableText
 
     @Test
@@ -222,4 +268,7 @@ class QuantityInputTest {
 
     private fun amountPaise(quantityThousandths: Long, ratePaise: Long): Long? =
         QuantityInput.amountPaise(quantityThousandths, ratePaise)
+
+    private fun quantityFor(amountPaise: Long, ratePaise: Long): Long? =
+        QuantityInput.quantityThousandthsFor(amountPaise, ratePaise)
 }

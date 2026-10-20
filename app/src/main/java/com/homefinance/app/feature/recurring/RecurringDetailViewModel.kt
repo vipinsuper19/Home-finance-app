@@ -27,7 +27,8 @@ import kotlinx.coroutines.launch
  * ### Where the data comes from
  *
  * Whatever [observeScheduleAndOccurrences] emits: the schedule joined to its category's name, and every
- * occurrence of it, newest first. Nothing here polls and nothing here re-queries after a write. Recording
+ * occurrence of it - waiting dates soonest first, then settled history newest first. Nothing here polls
+ * and nothing here re-queries after a write. Recording
  * a payment, skipping an occurrence, pausing or stopping all write to the database, and these queries are
  * what push the result back. That is why nothing in this class has to refresh anything, and why the
  * settle flows report no result through navigation.

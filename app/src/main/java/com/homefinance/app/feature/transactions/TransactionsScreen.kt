@@ -62,7 +62,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.homefinance.app.R
 import com.homefinance.app.core.ui.component.HomeFinanceTopBar
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
+import com.homefinance.app.core.util.CurrencyFormatter
 import com.homefinance.app.core.util.DateFormatter
+import com.homefinance.app.core.util.QuantityInput
 import com.homefinance.app.data.model.TransactionType
 import com.homefinance.app.feature.addtransaction.CategoryMark
 import java.time.LocalDate
@@ -527,8 +529,8 @@ private fun DateHeading(
  * row rather than a chevron at its edge, because tapping a row to see more of it is what a list is
  * for, and a target that is the full row is easier to hit than a 24dp glyph. `Role.Button` is what
  * tells a screen reader the row can be activated; no `contentDescription` is added, because the row's
- * own words - category, description, amount - are the description, and replacing them would hide the
- * figures the household came to read.
+ * own words - category, description, quantity and rate, amount - are the description, and replacing
+ * them would hide the figures the household came to read.
  */
 @Composable
 private fun TransactionRow(
@@ -537,6 +539,8 @@ private fun TransactionRow(
     modifier: Modifier = Modifier,
 ) {
     val description = item.description
+    val quantityThousandths = item.quantityThousandths
+    val ratePaise = item.ratePaise
 
     Row(
         modifier = modifier
@@ -568,6 +572,22 @@ private fun TransactionRow(
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (quantityThousandths != null && ratePaise != null) {
+                // The pair is drawn in the list as well as on the details screen, so a milk entry
+                // reads as "2 x ₹60.00" wherever the household meets it. The two figures are always
+                // present together - the ledger never stores one without the other.
+                Text(
+                    text = stringResource(
+                        R.string.transaction_detail_quantity_value,
+                        QuantityInput.toEditableText(quantityThousandths),
+                        CurrencyFormatter.formatInr(ratePaise),
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -672,6 +692,8 @@ private fun TransactionsContentPreview() {
                                 transactionDate = PREVIEW_TODAY,
                                 amountPaise = 9_000L,
                                 type = TransactionType.EXPENSE,
+                                quantityThousandths = 1_500L,
+                                ratePaise = 6_000L,
                             ),
                             TransactionListItem(
                                 id = 2L,

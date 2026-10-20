@@ -7,8 +7,11 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.homefinance.app.R
@@ -84,13 +87,18 @@ class SettingsScreenTest {
             R.string.settings_section_manage,
             R.string.settings_section_app,
         ).forEach { heading ->
-            composeTestRule.onNodeWithText(text(heading)).assertExists()
+            // A heading can share its copy with a row inside the group - "App Settings" names both
+            // the fourth section and the version row - so assert that the heading is present rather
+            // than that its copy is unique on the screen.
+            composeTestRule.onAllNodesWithText(text(heading)).onFirst().assertExists()
         }
 
         composeTestRule.onNodeWithText(text(R.string.settings_theme)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.settings_backup_restore)).assertIsDisplayed()
         composeTestRule.onNodeWithText(text(R.string.settings_manage_categories)).assertExists()
-        composeTestRule.onNodeWithText(text(R.string.app_settings_title)).assertExists()
+        composeTestRule
+            .onNode(hasText(text(R.string.app_settings_title)) and hasClickAction())
+            .assertExists()
     }
 
     @Test
@@ -114,6 +122,7 @@ class SettingsScreenTest {
 
         composeTestRule
             .onNode(hasText(text(R.string.app_settings_title)) and hasClickAction())
+            .performScrollTo()
             .performClick()
 
         assertEquals(true, opened.get())
@@ -127,10 +136,14 @@ class SettingsScreenTest {
             onShowBalanceChange = { reported.set(it) },
         )
 
+        // The toggleable row merges its title and subtitle into one semantics node, so the label is
+        // only a *descendant* in the unmerged tree.
         composeTestRule
             .onNode(
                 isToggleable() and hasAnyDescendant(hasText(text(R.string.settings_show_balance))),
+                useUnmergedTree = true,
             )
+            .performScrollTo()
             .performClick()
 
         assertNotNull(reported.get())
@@ -144,6 +157,7 @@ class SettingsScreenTest {
         composeTestRule
             .onNode(
                 isToggleable() and hasAnyDescendant(hasText(text(R.string.settings_show_balance))),
+                useUnmergedTree = true,
             )
             .assertIsOff()
     }

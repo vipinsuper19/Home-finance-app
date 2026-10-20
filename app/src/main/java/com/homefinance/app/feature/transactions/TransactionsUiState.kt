@@ -163,6 +163,13 @@ data class TransactionListItem(
     val amountPaise: Long,
     val type: TransactionType,
     /**
+     * How many thousandths of a unit were bought, or `null` for an entry recorded as a plain amount.
+     * Set together with [ratePaise], exactly as the ledger stores the pair.
+     */
+    val quantityThousandths: Long? = null,
+    /** The price of one unit in paise, or `null`; set together with [quantityThousandths]. */
+    val ratePaise: Long? = null,
+    /**
      * The category's stored mark, or `null` when nobody chose one. Passed straight through to the
      * row's `CategoryMark`, which falls back to a mark derived from [categoryName] - the same picture
      * the picker shows for the same category.
@@ -188,6 +195,8 @@ fun TransactionWithCategory.toListItem(): TransactionListItem = TransactionListI
     transactionDate = transactionDate,
     amountPaise = amountPaise,
     type = type,
+    quantityThousandths = quantityThousandths,
+    ratePaise = ratePaise,
     categoryIconKey = categoryIconKey,
 )
 

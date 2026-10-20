@@ -26,7 +26,7 @@ sealed interface RecurringOccurrencesUiState {
     data class Failed(val cause: Throwable) : RecurringOccurrencesUiState
 
     /**
-     * Every occurrence of the schedule, newest first.
+     * Every occurrence of the schedule: waiting dates soonest first, then settled history newest first.
      *
      * An empty list is a success: a schedule whose first occurrence is further out than the generation
      * horizon has none yet, and that is a fact about the schedule rather than a failure to read it.

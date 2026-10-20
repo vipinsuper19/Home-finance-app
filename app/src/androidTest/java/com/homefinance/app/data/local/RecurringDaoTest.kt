@@ -254,22 +254,36 @@ class RecurringDaoTest {
     }
 
     @Test
-    fun occurrencesAreReadNewestFirst() {
+    fun pendingOccurrencesLeadSoonestFirstAndSettledHistoryFollowsNewestFirst() {
         runBlocking {
             val scheduleId = insertSchedule()
             recurringDao.insertOccurrences(
                 listOf(
+                    // Pending: the soonest first, so today's or the oldest overdue date leads.
                     occurrence(scheduleId, dueDate = LocalDate.of(2026, 10, 5)),
-                    occurrence(scheduleId, dueDate = LocalDate.of(2026, 9, 5)),
                     occurrence(scheduleId, dueDate = LocalDate.of(2026, 11, 5)),
+                    // Settled: after the waiting dates, the most recent first.
+                    occurrence(
+                        scheduleId,
+                        dueDate = LocalDate.of(2026, 9, 5),
+                        status = RecurringOccurrenceStatus.PAID,
+                    ),
+                    occurrence(
+                        scheduleId,
+                        dueDate = LocalDate.of(2026, 8, 5),
+                        status = RecurringOccurrenceStatus.SKIPPED,
+                    ),
                 ),
             )
 
+            // A future date the engine already planned must not be drawn above a date that is
+            // waiting now, and history must not push a waiting date down.
             assertEquals(
                 listOf(
-                    LocalDate.of(2026, 11, 5),
                     LocalDate.of(2026, 10, 5),
+                    LocalDate.of(2026, 11, 5),
                     LocalDate.of(2026, 9, 5),
+                    LocalDate.of(2026, 8, 5),
                 ),
                 recurringDao.observeOccurrencesForSchedule(scheduleId).first().map { it.dueDate },
             )

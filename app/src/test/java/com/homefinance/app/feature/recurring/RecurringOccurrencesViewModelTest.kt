@@ -91,7 +91,7 @@ class RecurringOccurrencesViewModelTest {
     }
 
     @Test
-    fun everyDateIsListedNewestFirst() = runTest {
+    fun everyWaitingDateIsListedSoonestFirst() = runTest {
         val viewModel = Fixture(
             schedules = listOf(schedule()),
             occurrences = (1L..6L).map { id ->
@@ -102,9 +102,11 @@ class RecurringOccurrencesViewModelTest {
         collectUiState(viewModel)
         advanceUntilIdle()
 
-        // The full history, not the details screen's short list: nothing is truncated here.
+        // The full list, not the details screen's short one: nothing is truncated here. These dates
+        // are all still waiting, so the one that has waited longest is the one at the top - the
+        // future dates the engine planned must not lead.
         assertEquals(
-            listOf(6L, 5L, 4L, 3L, 2L, 1L),
+            listOf(1L, 2L, 3L, 4L, 5L, 6L),
             viewModel.content().occurrences.map { it.id },
         )
     }

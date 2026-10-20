@@ -228,6 +228,38 @@ class RecurringDetailViewModelTest {
     }
 
     @Test
+    fun theShortListLeadsWithTodaysWaitingDateRatherThanAFutureOne() = runTest {
+        val viewModel = Fixture(
+            schedules = listOf(schedule()),
+            occurrences = listOf(
+                occurrence(
+                    id = 1L,
+                    dueDate = TODAY.minusDays(35),
+                    status = RecurringOccurrenceStatus.PAID,
+                ),
+                occurrence(id = 2L, dueDate = TODAY.plusDays(30)),
+                occurrence(id = 3L, dueDate = TODAY),
+                occurrence(
+                    id = 4L,
+                    dueDate = TODAY.minusDays(5),
+                    status = RecurringOccurrenceStatus.PAID,
+                ),
+                occurrence(id = 5L, dueDate = TODAY.plusDays(5)),
+            ),
+        ).viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        // Waiting dates first and soonest first - today leads, not the furthest future date the
+        // engine has planned - then settled history newest first.
+        assertEquals(
+            listOf(3L, 5L, 2L, 4L, 1L),
+            viewModel.content().recentOccurrences.map { it.id },
+        )
+    }
+
+    @Test
     fun theSummaryCountsEveryOccurrenceAndLeavesSkipsOutOfAllThreeFigures() = runTest {
         val viewModel = Fixture(
             schedules = listOf(schedule()),

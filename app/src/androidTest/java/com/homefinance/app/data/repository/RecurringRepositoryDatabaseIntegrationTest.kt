@@ -435,7 +435,7 @@ class RecurringRepositoryDatabaseIntegrationTest {
     }
 
     @Test
-    fun aUnitPriceIsStoredOnTheScheduleAndNeverCopiedOntoTheEntry() {
+    fun aUnitPriceIsStoredOnTheScheduleAndRecoveredOnTheEntry() {
         runBlocking {
             val categoryId = expenseCategory(name = "Milk")
             val scheduleId = createSchedule(
@@ -460,12 +460,12 @@ class RecurringRepositoryDatabaseIntegrationTest {
                 now = now,
             ) as MarkPaidOutcome.Paid
 
-            // The entry does not: one rate with no quantity beside it would be half of a sum that does
-            // not multiply out, and the ledger's own rule is that quantity and rate are a pair.
+            // ₹60.00 at ₹60.00 a litre is exactly one litre, so the entry carries the pair the ledger
+            // requires rather than a single rate that would not multiply out.
             val transaction = transactionRepository.getById(paid.transactionId)!!
             assertEquals(6_000L, transaction.amountPaise)
-            assertNull(transaction.quantityThousandths)
-            assertNull(transaction.ratePaise)
+            assertEquals(1_000L, transaction.quantityThousandths)
+            assertEquals(6_000L, transaction.ratePaise)
         }
     }
 
