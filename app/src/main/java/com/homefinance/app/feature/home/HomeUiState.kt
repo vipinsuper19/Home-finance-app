@@ -5,17 +5,14 @@ import androidx.compose.runtime.Immutable
 /**
  * Immutable snapshot of everything the Home screen renders.
  *
- * The summary figures are still [com.homefinance.app.core.common.PlaceholderData] and are still
- * flagged as such - see [isPlaceholderData] - while [recurring] is read from the household's own
- * database. That mix is deliberate and temporary: the recurring section is real, and the monthly
- * figures become real in a later piece of work, so the badge keeps saying which is which rather than
- * quietly dressing sample numbers as the household's own.
+ * [balanceInPaise], [incomeInPaise] and [expenseInPaise] are the current month's sums read from the
+ * household's own ledger - exact `Long` paise, summed by SQLite over the transactions that have
+ * actually moved. They are **not** sample figures and there is no badge pretending otherwise.
  *
  * ### Expected money is not actual money
  *
  * [recurring] holds *expectations*: a date that is coming, or one that is late, is not a payment and
- * has moved nothing. It is therefore kept apart from [balanceInPaise], [incomeInPaise] and
- * [expenseInPaise], which are the figures that will one day be summed from the ledger. Nothing in the
+ * has moved nothing. It is therefore kept apart from the monthly figures above. Nothing in the
  * section is ever added to them - the household's totals stay exactly what the transactions say, and a
  * bill that has not been paid is not allowed to look like one that has.
  */
@@ -24,8 +21,6 @@ data class HomeUiState(
     val balanceInPaise: Long,
     val incomeInPaise: Long,
     val expenseInPaise: Long,
-    /** True while the figures above come from [com.homefinance.app.core.common.PlaceholderData]. */
-    val isPlaceholderData: Boolean = true,
     /**
      * Whether the balance card may draw its amount.
      *

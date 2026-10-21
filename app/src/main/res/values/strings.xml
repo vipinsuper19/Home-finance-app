@@ -19,7 +19,6 @@
     <string name="home_balance_hidden">Balance hidden in Settings</string>
     <string name="home_income_label">Income</string>
     <string name="home_expense_label">Expenses</string>
-    <string name="home_sample_badge">Sample data</string>
 
     <!-- Home screen: the recurring section -->
     <string name="home_recurring_title">Recurring Payments</string>

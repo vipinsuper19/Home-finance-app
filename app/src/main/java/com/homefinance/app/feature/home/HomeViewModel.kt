@@ -6,8 +6,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.homefinance.app.HomeFinanceApp
-import com.homefinance.app.core.common.PlaceholderData
 import com.homefinance.app.data.local.relation.OutstandingOccurrence
+import com.homefinance.app.data.local.relation.TransactionTotals
 import com.homefinance.app.data.repository.RecurringRepository
 import com.homefinance.app.feature.recurring.OccurrenceDisplayState
 import com.homefinance.app.feature.recurring.isSettled
@@ -30,8 +30,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
- * Backs the Home screen: the monthly figures, which are still sample data, and the recurring section,
- * which is the household's own.
+ * Backs the Home screen: the current month's figures, read from the ledger, and the recurring section,
+ * which reads the household's own scheduled dates.
  *
  * ### Why the section is read here rather than drawn from the list's state
  *
@@ -71,8 +71,9 @@ import kotlinx.coroutines.launch
  * [HomeUiState].
  *
  * @param today the day the section considers to be today, used both to read each due date as overdue,
- *   due or upcoming and to decide how far ahead to generate. It is a constructor parameter so a test
- *   can pin it; production supplies the device's real day.
+ *   due or upcoming and to decide how far ahead to generate; in production it also picks the calendar
+ *   month whose ledger totals the summary draws. It is a constructor parameter so a test can pin it;
+ *   production supplies the device's real day.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(
@@ -88,6 +89,16 @@ class HomeViewModel(
      * balance because a setting row could not be read.
      */
     private val showBalance: Flow<Boolean> = flowOf(true),
+    /**
+     * The current month's ledger totals, which become the three figures at the top of the dashboard.
+     *
+     * A `Flow` rather than a repository so the screen depends on exactly the aggregate it draws, and
+     * a test can pin the month's income and expenses without a database. Production supplies the
+     * totals for the calendar month containing [today], through
+     * [com.homefinance.app.data.repository.ReportRepository.observeTotals]. Before the database has
+     * answered, and if the aggregate cannot be read, the figures are zero - never invented.
+     */
+    private val monthlyTotals: Flow<TransactionTotals> = flowOf(TransactionTotals.None),
 ) : ViewModel() {
 
     private val retryRequests = MutableStateFlow(0)
@@ -102,7 +113,16 @@ class HomeViewModel(
             // A failed settings read shows the balance rather than hiding it: the household asked for
             // a dashboard, and a broken preference row must not look like a private-mode switch.
             showBalance.catch { emit(true) },
-        ) { read, behind, balanceVisible -> read.toUiState(behind, balanceVisible) }
+            // A failed aggregate is zero, not a sample figure and not a crash: the rest of the
+            // dashboard still draws, and a retry re-subscribes to the same ledger read.
+            retryRequests.flatMapLatest { observeMonthlyTotals() },
+        ) { read, behind, balanceVisible, totals ->
+            read.toUiState(
+                generationFailed = behind,
+                showBalance = balanceVisible,
+                totals = totals,
+            )
+        }
             .stateIn(
                 scope = viewModelScope,
                 // Keeping the subscription alive briefly means coming back to Home - from a bill's
@@ -111,6 +131,7 @@ class HomeViewModel(
                 initialValue = RecurringRead.Loading.toUiState(
                     generationFailed = false,
                     showBalance = true,
+                    totals = TransactionTotals.None,
                 ),
             )
 
@@ -163,14 +184,23 @@ class HomeViewModel(
             .catch { failure -> emit(RecurringRead.Failed(failure)) }
     }
 
+    /**
+     * The month's aggregate as this screen sees it.
+     *
+     * A failure becomes [TransactionTotals.None] rather than taking the dashboard down: the section
+     * below still has true rows to draw, and a retry is allowed to try the read again.
+     */
+    private fun observeMonthlyTotals(): Flow<TransactionTotals> =
+        monthlyTotals.catch { emit(TransactionTotals.None) }
+
     private fun RecurringRead.toUiState(
         generationFailed: Boolean,
         showBalance: Boolean,
+        totals: TransactionTotals,
     ): HomeUiState = HomeUiState(
-        balanceInPaise = PlaceholderData.balanceInPaise,
-        incomeInPaise = PlaceholderData.incomeInPaise,
-        expenseInPaise = PlaceholderData.expenseInPaise,
-        isPlaceholderData = true,
+        balanceInPaise = totals.netPaise,
+        incomeInPaise = totals.incomePaise,
+        expenseInPaise = totals.expensePaise,
         showBalance = showBalance,
         recurring = when (this) {
             RecurringRead.Loading -> HomeRecurringUiState.Loading
@@ -186,6 +216,12 @@ class HomeViewModel(
      * here: re-sorting would be a second opinion about an order the database has already given, and it
      * is the database that can see the whole table.
      *
+     * The upcoming group is deliberately narrowed to **one date per category** before it is
+     * previewed. A daily milk schedule would otherwise fill the whole preview with the same bill, and
+     * the section is meant to answer "what is coming" at a glance rather than list every date of one
+     * category. The first date the query returned for a category is kept, which is its soonest one;
+     * every date is still on the recurring tab. Overdue and due-today dates are never narrowed.
+     *
      * A settled row is dropped rather than drawn: the query already excludes paid and skipped
      * occurrences, and if one ever arrived anyway the honest reading of it is "this is finished with",
      * which is not one of the three groups. Nothing is announced as completed on the strength of a
@@ -196,14 +232,16 @@ class HomeViewModel(
         val items = occurrences
             .map { it.toHomeItem(today) }
             .filterNot { it.state.isSettled() }
-        val upcoming = items.filter { it.state == OccurrenceDisplayState.UPCOMING }
+        val upcoming = items
+            .filter { it.state == OccurrenceDisplayState.UPCOMING }
+            .distinctBy { it.categoryId }
 
         return HomeRecurringUiState.Ready(
             overdue = items.filter { it.state == OccurrenceDisplayState.OVERDUE },
             dueToday = items.filter { it.state == OccurrenceDisplayState.DUE },
             upcoming = upcoming.take(UPCOMING_PREVIEW_LIMIT),
-            // Counted before the preview trims the list, so the heading says how many are coming in
-            // all rather than how many happen to be drawn.
+            // One per category, counted before the preview trims the categories, so the heading says
+            // how many categories are coming in all rather than how many happen to be drawn.
             upcomingTotal = upcoming.size,
             hasAnySchedule = scheduleCount > 0,
             generationFailed = generationFailed,
@@ -240,12 +278,19 @@ class HomeViewModel(
                 ) { "HomeViewModel needs the Application to reach the repository" }
 
                 val app = application as HomeFinanceApp
+                val today = LocalDate.now()
                 HomeViewModel(
                     recurring = app.recurringRepository,
+                    today = today,
                     showBalance = app.settingsRepository.preferences
                         .map { it.showBalanceOnHome }
                         .distinctUntilChanged(),
-                )            }
+                    monthlyTotals = app.reportRepository.observeTotals(
+                        from = today.withDayOfMonth(1),
+                        to = today.withDayOfMonth(today.lengthOfMonth()),
+                    ),
+                )
+            }
         }
 
         /**

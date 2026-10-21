@@ -16,7 +16,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -28,7 +27,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.homefinance.app.R
-import com.homefinance.app.core.common.PlaceholderData
 import com.homefinance.app.core.ui.component.HomeFinanceTopBar
 import com.homefinance.app.core.ui.component.SummaryAmountCard
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
@@ -39,11 +37,11 @@ import com.homefinance.app.feature.recurring.OccurrenceDisplayState
 import java.time.LocalDate
 
 /**
- * Home: the monthly overview, with what is due from the household's recurring schedules underneath it.
+ * Home: the month's overview, with what is due from the household's recurring schedules underneath it.
  *
- * The summary figures are still clearly marked as sample data because they are not read from the
- * ledger yet, while the recurring section below them is the household's own: what is late, what is due
- * today, and what is coming, all read from the occurrences the engine has generated.
+ * The summary figures are read from the household's own ledger for the current month, and the
+ * recurring section below them is read from the occurrences the engine has generated: what is late,
+ * what is due today, and what is coming.
  *
  * ### The dashboard writes nothing
  *
@@ -119,7 +117,6 @@ internal fun HomeContent(
             BalanceCard(
                 balanceInPaise = uiState.balanceInPaise,
                 showBalance = uiState.showBalance,
-                showSampleBadge = uiState.isPlaceholderData,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SummaryAmountCard(
@@ -150,7 +147,6 @@ internal fun HomeContent(
 private fun BalanceCard(
     balanceInPaise: Long,
     showBalance: Boolean,
-    showSampleBadge: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -166,19 +162,10 @@ private fun BalanceCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.home_balance_label),
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                if (showSampleBadge) {
-                    SampleDataBadge()
-                }
-            }
+            Text(
+                text = stringResource(R.string.home_balance_label),
+                style = MaterialTheme.typography.labelLarge,
+            )
             if (showBalance) {
                 Text(
                     text = CurrencyFormatter.formatInr(balanceInPaise),
@@ -206,30 +193,14 @@ private fun BalanceCard(
     }
 }
 
-@Composable
-private fun SampleDataBadge(modifier: Modifier = Modifier) {
-    Surface(
-        modifier = modifier,
-        // A white pill with dark text: the previous translucent-white badge faded the text to
-        // roughly 4.4:1 contrast against the emerald card, below the 4.5:1 WCAG AA floor.
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surface,
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-    ) {
-        Text(
-            text = stringResource(R.string.home_sample_badge),
-            style = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-        )
-    }
-}
-
 /**
  * A preview of the two states worth looking at: a section with something late in it, and the summary
  * cards above it exactly as production draws them.
  *
  * The rows are invented here and nowhere else - a preview is tooling, and the screen itself never
- * shows a household a bill they do not have.
+ * shows a household a bill they do not have. The summary figures are left at zero: there is no
+ * ledger behind a preview, and inventing figures for it would be the sample data this screen no
+ * longer shows.
  */
 @Preview(showBackground = true, backgroundColor = 0xFFFFFFFF)
 @Composable
@@ -237,9 +208,9 @@ private fun HomeContentPreview() {
     HomeFinanceTheme {
         HomeContent(
             uiState = HomeUiState(
-                balanceInPaise = PlaceholderData.balanceInPaise,
-                incomeInPaise = PlaceholderData.incomeInPaise,
-                expenseInPaise = PlaceholderData.expenseInPaise,
+                balanceInPaise = 0L,
+                incomeInPaise = 0L,
+                expenseInPaise = 0L,
                 recurring = HomeRecurringUiState.Ready(
                     overdue = listOf(
                         previewItem(
@@ -305,6 +276,7 @@ private fun previewItem(
 ): HomeRecurringItem = HomeRecurringItem(
     occurrenceId = occurrenceId,
     scheduleId = scheduleId,
+    categoryId = scheduleId,
     scheduleName = name,
     categoryName = categoryName,
     categoryType = categoryType,

@@ -9,7 +9,6 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.homefinance.app.R
-import com.homefinance.app.core.common.PlaceholderData
 import com.homefinance.app.core.ui.theme.HomeFinanceTheme
 import com.homefinance.app.core.util.CurrencyFormatter
 import com.homefinance.app.data.model.RecurrenceFrequency
@@ -29,9 +28,9 @@ import org.junit.runner.RunWith
  *
  * The view model's rules - what is overdue, what the preview may trim, what a failed run does - are
  * pinned on the JVM in `HomeViewModelTest`. What only a device can show is that those readings survive
- * being drawn: that a late date says *in words* how late it is, that a group heading counts every date
- * rather than the five the preview drew, that an empty group is said rather than left blank, and that a
- * section which could not be read does not take the rest of the dashboard down with it.
+ * being drawn: that a late date says *in words* how late it is, that a group heading counts every
+ * category rather than the five the preview drew, that an empty group is said rather than left blank,
+ * and that a section which could not be read does not take the rest of the dashboard down with it.
  */
 @RunWith(AndroidJUnit4::class)
 class HomeRecurringSectionTest {
@@ -149,7 +148,7 @@ class HomeRecurringSectionTest {
     }
 
     @Test
-    fun theUpcomingHeadingCountsEveryDateRatherThanTheFiveThePreviewDrew() {
+    fun theUpcomingHeadingCountsEveryCategoryRatherThanOnlyTheFiveThePreviewDrew() {
         renderSection(
             ready(
                 upcoming = (1L..5L).map { index ->
@@ -159,7 +158,8 @@ class HomeRecurringSectionTest {
             ),
         )
 
-        // A preview stops at five rows; the heading must not quietly become "there are only five".
+        // A preview stops at five categories; the heading must not quietly become "there are only
+        // five". The view model keeps one date per category before this state is built.
         composeTestRule.onNodeWithText(heading(R.string.home_recurring_group_upcoming, 8)).assertIsDisplayed()
     }
 
@@ -230,9 +230,9 @@ class HomeRecurringSectionTest {
             HomeFinanceTheme {
                 HomeContent(
                     uiState = HomeUiState(
-                        balanceInPaise = PlaceholderData.balanceInPaise,
-                        incomeInPaise = PlaceholderData.incomeInPaise,
-                        expenseInPaise = PlaceholderData.expenseInPaise,
+                        balanceInPaise = 0L,
+                        incomeInPaise = 0L,
+                        expenseInPaise = 0L,
                         recurring = HomeRecurringUiState.Failed(IOException("could not be read")),
                     ),
                     onOpenSettings = {},
@@ -354,6 +354,7 @@ class HomeRecurringSectionTest {
         ): HomeRecurringItem = HomeRecurringItem(
             occurrenceId = id,
             scheduleId = scheduleId,
+            categoryId = scheduleId,
             scheduleName = name,
             categoryName = "Utilities",
             categoryType = TransactionType.EXPENSE,

@@ -1,10 +1,10 @@
 package com.homefinance.app.feature.home
 
 import androidx.lifecycle.ViewModelStore
-import com.homefinance.app.core.common.PlaceholderData
 import com.homefinance.app.data.local.entity.CategoryEntity
 import com.homefinance.app.data.local.entity.RecurringOccurrenceEntity
 import com.homefinance.app.data.local.entity.RecurringScheduleEntity
+import com.homefinance.app.data.local.relation.TransactionTotals
 import com.homefinance.app.data.model.RecurrenceFrequency
 import com.homefinance.app.data.model.RecurringOccurrenceStatus
 import com.homefinance.app.data.model.RecurringScheduleStatus
@@ -23,6 +23,8 @@ import java.time.Instant
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -38,19 +40,22 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * The Home screen's recurring section, driven over the in-memory fakes behind the real repository.
+ * The Home screen's state, driven over the in-memory fakes behind the real repository.
  *
- * Four things are pinned here, and all four are things no other layer can check as cheaply:
+ * Five things are pinned here, and all five are things no other layer can check as cheaply:
  *
+ *  - **The summary.** The figures are the month's ledger totals, with the balance as their net, and
+ *    they start at zero rather than inventing sample data before the ledger answers.
  *  - **The classification.** A date is overdue, due today or upcoming depending on where it falls
  *    against one known today. The two boundaries either side of today are the ones worth asserting,
  *    because that is where an off-by-one turns a late bill into a comfortable one.
- *  - **What the section refuses to be.** A preview is not a filter: limiting the drawn upcoming dates
- *    must not drop a single record, and a reading that failed must not look like a month with nothing in
- *    it. Likewise, a settled or paused schedule's dates never appear as work to do.
- *  - **The engine run.** Opening Home is one of the two places the recurrence engine runs, and it is the
- *    place a household actually opens. These tests prove the run happens, that it is safe to run twice,
- *    and that it never writes a ledger entry - a bill falling due is not a payment.
+ *  - **What the section refuses to be.** A preview is not a filter: limiting the drawn upcoming
+ *    categories must not drop a single record, one date per category must not duplicate a category,
+ *    and a reading that failed must not look like a month with nothing in it. Likewise, a settled or
+ *    paused schedule's dates never appear as work to do.
+ *  - **The engine run.** Opening Home is one of the two places the recurrence engine runs, and it is
+ *    the place a household actually opens. These tests prove the run happens, that it is safe to run
+ *    twice, and that it never writes a ledger entry - a bill falling due is not a payment.
  *  - **That expectations stay out of the totals.** Overdue, due and upcoming dates are money that has
  *    *not* moved. They are asserted never to touch the figures the household reads above them.
  */
@@ -79,15 +84,35 @@ class HomeViewModelTest {
     // ------------------------------------------------------------------ the summary figures
 
     @Test
-    fun theSummaryFiguresAreStillSampleDataAndStillSaySo() {
-        val viewModel = Fixture().viewModel()
+    fun theSummaryStartsAtZeroRatherThanInventingFigures() {
+        val state = Fixture().viewModel().uiState.value
+
+        // Before the ledger has answered there is nothing to claim, and no sample badge dressing a
+        // made-up figure as the household's own.
+        assertEquals(0L, state.balanceInPaise)
+        assertEquals(0L, state.incomeInPaise)
+        assertEquals(0L, state.expenseInPaise)
+    }
+
+    @Test
+    fun theSummaryFiguresComeFromTheMonthsLedgerTotals() = runTest {
+        val totals = TransactionTotals(
+            incomePaise = 4_850_000L,
+            expensePaise = 5_734_050L,
+            incomeCount = 3L,
+            expenseCount = 9L,
+        )
+        val viewModel = Fixture().viewModel(monthlyTotals = flowOf(totals))
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
 
         val state = viewModel.uiState.value
 
-        assertEquals(PlaceholderData.balanceInPaise, state.balanceInPaise)
-        assertEquals(PlaceholderData.incomeInPaise, state.incomeInPaise)
-        assertEquals(PlaceholderData.expenseInPaise, state.expenseInPaise)
-        assertTrue(state.isPlaceholderData)
+        assertEquals(totals.incomePaise, state.incomeInPaise)
+        assertEquals(totals.expensePaise, state.expenseInPaise)
+        // Balance is the ledger's own net, so a month that spent more than it earned reads negative.
+        assertEquals(totals.netPaise, state.balanceInPaise)
     }
 
     @Test
@@ -178,7 +203,7 @@ class HomeViewModelTest {
     }
 
     @Test
-    fun aScheduleWithSeveralWaitingDatesGetsOneRowEach() = runTest {
+    fun aScheduleWithSeveralWaitingDatesShowsOnlyItsSoonestDate() = runTest {
         val viewModel = Fixture(
             occurrences = listOf(
                 occurrence(id = 1L, dueDate = TODAY.plusDays(5)),
@@ -190,19 +215,53 @@ class HomeViewModelTest {
         collectUiState(viewModel)
         advanceUntilIdle()
 
-        val upcoming = viewModel.ready().upcoming
+        val section = viewModel.ready()
 
-        assertEquals(listOf(1L, 2L, 3L), upcoming.map { it.occurrenceId })
-        assertEquals(listOf(SCHEDULE_ID, SCHEDULE_ID, SCHEDULE_ID), upcoming.map { it.scheduleId })
+        // One category, one row: the soonest date is the one worth showing, and the later dates are
+        // still on the recurring tab rather than crowding the dashboard with the same bill.
+        assertEquals(listOf(1L), section.upcoming.map { it.occurrenceId })
+        assertEquals(1, section.upcomingTotal)
+    }
+
+    @Test
+    fun oneUpcomingDateIsShownForEachCategoryAndTheSoonestDateWins() = runTest {
+        val viewModel = Fixture(
+            schedules = listOf(
+                schedule(id = 1L, name = "Milk", categoryId = FOOD_ID),
+                schedule(id = 2L, name = "Curd", categoryId = FOOD_ID),
+                schedule(id = 3L, name = "Salary", categoryId = SALARY_ID),
+            ),
+            occurrences = listOf(
+                occurrence(id = 1L, scheduleId = 1L, dueDate = TODAY.plusDays(5)),
+                occurrence(id = 2L, scheduleId = 2L, dueDate = TODAY.plusDays(2)),
+                occurrence(id = 3L, scheduleId = 1L, dueDate = TODAY.plusDays(10)),
+                occurrence(id = 4L, scheduleId = 3L, dueDate = TODAY.plusDays(7)),
+            ),
+        ).viewModel()
+
+        collectUiState(viewModel)
+        advanceUntilIdle()
+
+        val section = viewModel.ready()
+
+        // Two categories, so two rows; the sooner of the two food dates represents food.
+        assertEquals(listOf(2L, 4L), section.upcoming.map { it.occurrenceId })
+        assertEquals(setOf(FOOD_ID, SALARY_ID), section.upcoming.map { it.categoryId }.toSet())
+        assertEquals(2, section.upcomingTotal)
     }
 
     @Test
     fun theSectionDrawsTheDatesInTheOrderItReadThem() = runTest {
         val viewModel = Fixture(
+            schedules = listOf(
+                schedule(id = 1L, name = "Rent", categoryId = RENT_ID),
+                schedule(id = 2L, name = "Salary", categoryId = SALARY_ID),
+                schedule(id = 3L, name = "Utilities", categoryId = UTILITIES_ID),
+            ),
             occurrences = listOf(
-                occurrence(id = 3L, dueDate = TODAY.plusDays(30)),
-                occurrence(id = 1L, dueDate = TODAY.plusDays(2)),
-                occurrence(id = 2L, dueDate = TODAY.plusDays(10)),
+                occurrence(id = 3L, scheduleId = 3L, dueDate = TODAY.plusDays(30)),
+                occurrence(id = 1L, scheduleId = 1L, dueDate = TODAY.plusDays(2)),
+                occurrence(id = 2L, scheduleId = 2L, dueDate = TODAY.plusDays(10)),
             ),
         ).viewModel()
 
@@ -236,11 +295,22 @@ class HomeViewModelTest {
     // ------------------------------------------------------------------ the preview is not a filter
 
     @Test
-    fun theUpcomingPreviewStopsAtFiveWhileTheHeadingStillCountsThemAll() = runTest {
+    fun theUpcomingPreviewShowsAtMostFiveCategoriesWhileTheHeadingCountsThemAll() = runTest {
+        val categories = (1L..8L).map { index ->
+            CategoryEntity.create("Category $index", TransactionType.EXPENSE)
+                .copy(id = 100L + index)
+        }
+        val schedules = (1L..8L).map { index ->
+            schedule(id = index, name = "Bill $index", categoryId = 100L + index)
+        }
+        val occurrences = (1L..8L).map { index ->
+            occurrence(id = index, scheduleId = index, dueDate = TODAY.plusDays(index))
+        }
+
         val viewModel = Fixture(
-            occurrences = (1L..8L).map { index ->
-                occurrence(id = index, dueDate = TODAY.plusDays(index))
-            },
+            schedules = schedules,
+            occurrences = occurrences,
+            categories = categories,
         ).viewModel()
 
         collectUiState(viewModel)
@@ -419,13 +489,19 @@ class HomeViewModelTest {
 
     @Test
     fun expectedMoneyIsNeverAddedToTheFiguresTheHouseholdReads() = runTest {
+        val totals = TransactionTotals(
+            incomePaise = 4_850_000L,
+            expensePaise = 2_734_050L,
+            incomeCount = 2L,
+            expenseCount = 6L,
+        )
         val viewModel = Fixture(
             occurrences = listOf(
                 occurrence(id = 1L, dueDate = TODAY.minusDays(30), amountPaise = 900_000L),
                 occurrence(id = 2L, dueDate = TODAY, amountPaise = 1_500_000L),
                 occurrence(id = 3L, dueDate = TODAY.plusDays(10), amountPaise = 800_000L),
             ),
-        ).viewModel()
+        ).viewModel(monthlyTotals = flowOf(totals))
 
         collectUiState(viewModel)
         advanceUntilIdle()
@@ -433,9 +509,9 @@ class HomeViewModelTest {
         // Three dates, ₹32,000 of expectation, and not one paisa of it has moved.
         val state = viewModel.uiState.value
 
-        assertEquals(PlaceholderData.balanceInPaise, state.balanceInPaise)
-        assertEquals(PlaceholderData.incomeInPaise, state.incomeInPaise)
-        assertEquals(PlaceholderData.expenseInPaise, state.expenseInPaise)
+        assertEquals(totals.netPaise, state.balanceInPaise)
+        assertEquals(totals.incomePaise, state.incomeInPaise)
+        assertEquals(totals.expensePaise, state.expenseInPaise)
     }
 
     // ------------------------------------------------------------------ the engine run
@@ -634,12 +710,16 @@ class HomeViewModelTest {
         return state as HomeRecurringUiState.Ready
     }
 
-    private fun Fixture.viewModel(): HomeViewModel =
-        HomeViewModel(recurring = repository, today = TODAY).also { viewModelStore.put("home", it) }
-
-    private fun Fixture.viewModel(showBalance: kotlinx.coroutines.flow.Flow<Boolean>): HomeViewModel =
-        HomeViewModel(recurring = repository, today = TODAY, showBalance = showBalance)
-            .also { viewModelStore.put("home", it) }
+    private fun Fixture.viewModel(
+        showBalance: Flow<Boolean> = flowOf(true),
+        monthlyTotals: Flow<TransactionTotals> = flowOf(TransactionTotals.None),
+    ): HomeViewModel =
+        HomeViewModel(
+            recurring = repository,
+            today = TODAY,
+            showBalance = showBalance,
+            monthlyTotals = monthlyTotals,
+        ).also { viewModelStore.put("home", it) }
 
     // ------------------------------------------------------------------ the balance preference
 
@@ -654,8 +734,15 @@ class HomeViewModelTest {
 
     @Test
     fun turningTheBalanceOffHidesTheAmountAndKeepsEveryOtherFigure() = runTest {
+        val totals = TransactionTotals(
+            incomePaise = 4_850_000L,
+            expensePaise = 2_734_050L,
+            incomeCount = 2L,
+            expenseCount = 6L,
+        )
         val viewModel = Fixture().viewModel(
-            showBalance = kotlinx.coroutines.flow.flowOf(false),
+            showBalance = flowOf(false),
+            monthlyTotals = flowOf(totals),
         )
         collectUiState(viewModel)
         advanceUntilIdle()
@@ -664,9 +751,9 @@ class HomeViewModelTest {
 
         assertFalse(state.showBalance)
         // The figure is still read and kept: the preference is about drawing it, not about losing it.
-        assertEquals(PlaceholderData.balanceInPaise, state.balanceInPaise)
-        assertEquals(PlaceholderData.incomeInPaise, state.incomeInPaise)
-        assertEquals(PlaceholderData.expenseInPaise, state.expenseInPaise)
+        assertEquals(totals.netPaise, state.balanceInPaise)
+        assertEquals(totals.incomePaise, state.incomeInPaise)
+        assertEquals(totals.expensePaise, state.expenseInPaise)
         assertTrue(state.recurring is HomeRecurringUiState.Ready)
     }
 
@@ -726,12 +813,16 @@ class HomeViewModelTest {
         const val SCHEDULE_ID = 1L
         const val RENT_ID = 10L
         const val SALARY_ID = 11L
+        const val UTILITIES_ID = 12L
+        const val FOOD_ID = 13L
 
         val TODAY: LocalDate = LocalDate.of(2026, 10, 20)
 
         val DEFAULT_CATEGORIES: List<CategoryEntity> = listOf(
             CategoryEntity.create("Rent", TransactionType.EXPENSE).copy(id = RENT_ID),
             CategoryEntity.create("Salary", TransactionType.INCOME).copy(id = SALARY_ID),
+            CategoryEntity.create("Utilities", TransactionType.EXPENSE).copy(id = UTILITIES_ID),
+            CategoryEntity.create("Food", TransactionType.EXPENSE).copy(id = FOOD_ID),
         )
 
         /**

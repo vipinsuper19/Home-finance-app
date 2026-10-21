@@ -15,13 +15,14 @@ import java.time.temporal.ChronoUnit
  *
  * Five, because a preview is what this is: the section is meant to answer "what is coming" at a
  * glance, and a list of every date three months out would turn the dashboard into the full list and
- * bury the two things above it. The header's count is the **total**, so a preview of five never
- * pretends there are only five - and nothing is lost by limiting the drawing, because every date is
- * still on the recurring tab, which is one tap away.
+ * bury the two things above it. The preview is also narrowed to one date per category, so a daily
+ * milk schedule cannot fill all five rows with the same bill. The header's count is the **total**,
+ * counted per category, so a preview of five never pretends there are only five - and nothing is lost
+ * by limiting the drawing, because every date is still on the recurring tab, which is one tap away.
  *
- * Overdue and due-today dates are deliberately *not* limited: those are the dates that want doing
- * something about, and hiding any of them would be the section deciding for the household which of
- * their own bills matters.
+ * Overdue and due-today dates are deliberately *not* limited or narrowed: those are the dates that
+ * want doing something about, and hiding any of them would be the section deciding for the household
+ * which of their own bills matters.
  */
 internal const val UPCOMING_PREVIEW_LIMIT = 5
 
@@ -49,9 +50,11 @@ sealed interface HomeRecurringUiState {
      * @param overdue dates whose day has passed and which are still waiting. Never empty-by-trimming:
      *   every one of them is drawn.
      * @param dueToday dates that fall on today, and [overdue]'s counterpart for the same reason.
-     * @param upcoming the next dates, at most [UPCOMING_PREVIEW_LIMIT] of them.
-     * @param upcomingTotal how many are coming in all, which is what the group's own heading counts -
-     *   so a preview of five can never read as "there are only five".
+     * @param upcoming the next date of each category, soonest first and at most
+     *   [UPCOMING_PREVIEW_LIMIT] categories. A category with several waiting dates contributes only
+     *   its soonest one.
+     * @param upcomingTotal how many categories are coming in all, which is what the group's own
+     *   heading counts - so a preview of five can never read as "there are only five".
      * @param hasAnySchedule whether the household has ever set a schedule up, whatever state it is in
      *   now. It is what tells "nothing set up yet", which deserves an invitation, apart from "nothing
      *   waiting", which deserves the truth: a household whose schedules are all paused or settled has
@@ -89,6 +92,8 @@ sealed interface HomeRecurringUiState {
  * @param occurrenceId the occurrence itself - never the schedule's id, because a schedule with several
  *   waiting dates has one row per date and the two must not be confused.
  * @param scheduleId the schedule to open when the row is tapped.
+ * @param categoryId the category the date is filed under. Home draws one upcoming date per category,
+ *   so this is the identity that grouping uses; two schedules under one category share it.
  * @param state where the date stands against today: overdue, due or upcoming. Never paid or skipped -
  *   the query behind this projection returns only dates that are still waiting.
  * @param daysFromToday how many whole days separate the due date from today: `-3` when it fell due
@@ -105,6 +110,7 @@ sealed interface HomeRecurringUiState {
 data class HomeRecurringItem(
     val occurrenceId: Long,
     val scheduleId: Long,
+    val categoryId: Long,
     val scheduleName: String,
     val categoryName: String,
     val categoryType: TransactionType,
@@ -129,6 +135,7 @@ data class HomeRecurringItem(
 internal fun OutstandingOccurrence.toHomeItem(today: LocalDate): HomeRecurringItem = HomeRecurringItem(
     occurrenceId = id,
     scheduleId = scheduleId,
+    categoryId = categoryId,
     scheduleName = scheduleName,
     categoryName = categoryName,
     categoryType = categoryType,
